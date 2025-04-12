@@ -1,0 +1,8 @@
+[package]
+name = "rust_dsp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dirs = "6.0.0"
+hound = "3.5.1"
