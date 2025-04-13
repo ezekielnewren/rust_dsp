@@ -1,4 +1,6 @@
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::Read;
 use bitvec::prelude::*;
 
 struct Tone {
@@ -10,9 +12,15 @@ struct Tone {
 fn main() {
     let dir_dump = dirs::home_dir().unwrap().join("tmp");
 
+    let argv: Vec<String> = std::env::args().collect();
+
+    let mut file_message = File::open(&argv[1]).unwrap();
+    let mut buffer = Vec::new();
+    file_message.read_to_end(&mut buffer).unwrap();
+    drop(file_message);
 
     let sample_rate = 44100.0;
-    let sps = 0.1;
+    let sps = 0.01;
 
     let lo = Tone { freq: 440.0, amp: 1.0 };
     let hi = Tone { freq: 660.0, amp: 1.0 };
@@ -26,11 +34,8 @@ fn main() {
 
     let mut writer = hound::WavWriter::create(dir_dump.join("tmp.wav"), spec).unwrap();
 
-    let message = "hello world";
-    let bytes = message.as_bytes();
-
     let mut bitstream = bitvec![0; 0];
-    for b in bytes {
+    for b in buffer.as_slice() {
         bitstream.push(((*b >> 0) & 1) != 0);
         bitstream.push(((*b >> 1) & 1) != 0);
         bitstream.push(((*b >> 2) & 1) != 0);
