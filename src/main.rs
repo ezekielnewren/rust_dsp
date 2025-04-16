@@ -34,7 +34,7 @@ where IT: Iterator<Item = &'a u8>
 impl<'a, IT> Iterator for BitStream<'a, IT>
 where IT: Iterator<Item = &'a u8>
 {
-    type Item = f32;
+    type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
         let (q, r) = (self.i >> 3, self.i & 0x7);
@@ -46,7 +46,7 @@ where IT: Iterator<Item = &'a u8>
             }
         }
 
-        let bit = ((self.byte >> r) & 1) as f32;
+        let bit = (self.byte >> r) & 1;
         self.i += 1;
         Some(bit)
     }
@@ -82,7 +82,7 @@ fn main() {
 
     let samples_per_symbol = 1.0 / baud * sample_rate;
     for bit in BitStream::new(buffer.as_slice().iter()) {
-        let bit = bit * 2.0 - 1.0;
+        let bit = bit as f32 * 2.0 - 1.0;
         let inst_freq = carrier.freq + bit * deviation;
 
         for _ in 0..samples_per_symbol as usize {
