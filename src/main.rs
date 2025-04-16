@@ -9,6 +9,51 @@ struct Tone {
 }
 
 
+struct BitStream<'a, IT>
+where IT: Iterator<Item = &'a u8>
+{
+    it: IT,
+    byte: u8,
+    i: usize,
+}
+
+impl<'a, IT> BitStream<'a, IT>
+where IT: Iterator<Item = &'a u8>
+{
+
+    fn new(it: IT) -> Self {
+        Self {
+            it,
+            byte: 0,
+            i: 0,
+        }
+    }
+
+}
+
+impl<'a, IT> Iterator for BitStream<'a, IT>
+where IT: Iterator<Item = &'a u8>
+{
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (q, r) = (self.i >> 3, self.i & 0x7);
+        if r == 0 {
+            if let Some(v) = self.it.next() {
+                self.byte = *v;
+            } else {
+                return None;
+            }
+        }
+
+        let bit = ((self.byte >> r) & 1) as f32;
+        self.i += 1;
+        Some(bit)
+    }
+}
+
+
+
 fn main() {
     let dir_dump = dirs::home_dir().unwrap().join("tmp");
 
@@ -20,10 +65,9 @@ fn main() {
     drop(file_message);
 
     let sample_rate = 44100.0;
-    let sps = 0.01;
-
-    let lo = Tone { freq: 440.0, amp: 1.0 };
-    let hi = Tone { freq: 660.0, amp: 1.0 };
+    let baud = 10.0f32;
+    let carrier = Tone { freq: 1000.0, amp: 0.5 };
+    let deviation = 500.0;
 
     let spec = hound::WavSpec {
         channels: 1,
@@ -34,27 +78,22 @@ fn main() {
 
     let mut writer = hound::WavWriter::create(dir_dump.join("tmp.wav"), spec).unwrap();
 
-    let mut bitstream = bitvec![0; 0];
-    for b in buffer.as_slice() {
-        bitstream.push(((*b >> 0) & 1) != 0);
-        bitstream.push(((*b >> 1) & 1) != 0);
-        bitstream.push(((*b >> 2) & 1) != 0);
-        bitstream.push(((*b >> 3) & 1) != 0);
-        bitstream.push(((*b >> 4) & 1) != 0);
-        bitstream.push(((*b >> 5) & 1) != 0);
-        bitstream.push(((*b >> 6) & 1) != 0);
-        bitstream.push(((*b >> 7) & 1) != 0);
-    }
+    let mut phase = 0.0f32;
 
-    for bit in bitstream {
-        let tone = if bit { &hi } else { &lo };
-        let mut tick = 0.0f32;
-        for _ in 0..(sps * sample_rate) as usize {
-            let sample = tone.amp * (2.0 * PI * tone.freq * (tick / sample_rate)).sin();
+    let samples_per_symbol = 1.0 / baud * sample_rate;
+    for bit in BitStream::new(buffer.as_slice().iter()) {
+        let bit = bit * 2.0 - 1.0;
+        let inst_freq = carrier.freq + bit * deviation;
+
+        for _ in 0..samples_per_symbol as usize {
+            let sample = carrier.amp * phase.cos();
+            phase += 2.0 * PI * inst_freq / sample_rate;
+
             let int_samp = (sample * i8::MAX as f32) as i8;
             writer.write_sample(int_samp).unwrap();
-            tick += 1.0;
         }
+
+        phase %= 2.0 * PI;
     }
 
     writer.finalize().unwrap();
