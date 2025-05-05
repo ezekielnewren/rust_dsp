@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 use bitvec::prelude::*;
 
 struct Tone {
@@ -53,13 +54,23 @@ where IT: Iterator<Item = &'a u8>
 }
 
 
+fn canonical_path(path: String) -> PathBuf {
+    if path.starts_with("~/") {
+        dirs::home_dir().unwrap().join(&path.as_str()[2..])
+    } else {
+        PathBuf::from(path)
+    }
+}
+
+
 
 fn main() {
     let dir_dump = dirs::home_dir().unwrap().join("tmp");
 
     let argv: Vec<String> = std::env::args().collect();
-
-    let mut file_message = File::open(&argv[1]).unwrap();
+    
+    let file_message = canonical_path(argv[1].clone());
+    let mut file_message = File::open(file_message).unwrap();
     let mut buffer = Vec::new();
     file_message.read_to_end(&mut buffer).unwrap();
     drop(file_message);
