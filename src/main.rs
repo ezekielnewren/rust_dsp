@@ -4,6 +4,10 @@ use std::io::Read;
 use std::path::PathBuf;
 use bitvec::prelude::*;
 
+
+pub mod block;
+mod impls;
+
 struct Tone {
     freq: f32,
     amp: f32,
