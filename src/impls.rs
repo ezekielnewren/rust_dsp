@@ -71,7 +71,7 @@ impl AlsaSource {
         let it = Self {
             pcm: PCM::new(device, alsa::Direction::Capture, false)?,
         };
-
+        
         let hwp = HwParams::any(&it.pcm)?;
 
         let channels = 1;
@@ -94,8 +94,42 @@ impl AlsaSource {
 
 
 impl Source<i16> for AlsaSource {
-    fn read(&mut self, dst: &mut Vec<i16>) -> Result<usize, Box<dyn Error>> {
+    fn read(&mut self, dst: &mut [i16]) -> Result<usize, Box<dyn Error>> {
         Ok(self.pcm.io_i16()?.readi(dst)?)
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Instant;
+    use crate::block::{Sink, Source};
+    use crate::impls::{AlsaSource, WavSink};
+
+    #[test]
+    fn test_microphone() -> Result<(), Box<dyn std::error::Error>> {
+        let sample_rate: usize = 44100;
+
+        let file_dest = PathBuf::from("/tmp/alsa.wav");
+
+        let mut source = AlsaSource::default_source(sample_rate)?;
+        let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
+
+        let mut total = 0;
+        let mut buff = vec![0; 1024];
+
+        let start = Instant::now();
+        loop {
+            if start.elapsed().as_secs_f32() > 3.0 {
+                break;
+            }
+            if let Ok(read) = source.read(buff.as_mut_slice()) {
+                sink.write(buff.as_slice())?;
+                total += read;
+            }
+        }
+
+        Ok(())
+    }
+
+}

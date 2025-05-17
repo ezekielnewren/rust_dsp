@@ -1,9 +1,12 @@
+use std::error::Error;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::time::Instant;
 use bitvec::prelude::*;
-
+use crate::block::{Sink, Source};
+use crate::impls::{AlsaSource, WavSink};
 
 pub mod block;
 mod impls;
@@ -68,52 +71,34 @@ fn canonical_path(path: String) -> PathBuf {
 
 
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let dir_dump = dirs::home_dir().unwrap().join("tmp");
 
     let argv: Vec<String> = std::env::args().collect();
+
+    let sample_rate: usize = 44100;
+
+    let file_dest = canonical_path(argv[1].clone());
     
-    let file_message = canonical_path(argv[1].clone());
-    let mut file_message = File::open(file_message).unwrap();
-    let mut buffer = Vec::new();
-    file_message.read_to_end(&mut buffer).unwrap();
-    drop(file_message);
+    let mut source = AlsaSource::default_source(sample_rate)?;
+    let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
-    let sample_rate = 44100.0;
-    let baud = 10.0f32;
-    let carrier = Tone { freq: 1000.0, amp: 0.5 };
-    let deviation = 500.0;
-
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: sample_rate as u32,
-        bits_per_sample: 8,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut writer = hound::WavWriter::create(dir_dump.join("tmp.wav"), spec).unwrap();
-
-    let mut phase = 0.0f32;
-
-    let samples_per_symbol = 1.0 / baud * sample_rate;
-    for bit in BitStream::new(buffer.as_slice().iter()) {
-        let bit = bit as f32 * 2.0 - 1.0;
-        let inst_freq = carrier.freq + bit * deviation;
-
-        for _ in 0..samples_per_symbol as usize {
-            let sample = carrier.amp * phase.cos();
-            phase += 2.0 * PI * inst_freq / sample_rate;
-
-            let int_samp = (sample * i8::MAX as f32) as i8;
-            writer.write_sample(int_samp).unwrap();
+    let mut total = 0;
+    let mut buff = vec![0; 1024];
+    
+    let start = Instant::now();
+    loop {
+        if start.elapsed().as_secs_f32() > 3.0 {
+            break;
         }
-
-        phase %= 2.0 * PI;
+        if let Ok(read) = source.read(buff.as_mut_slice()) {
+            sink.write(buff.as_slice())?;
+            total += read;
+        }
     }
-
-    writer.finalize().unwrap();
-
-    println!("{}", dir_dump.as_path().display());
-
+    
+    println!("Total: {}", total);
+    
+    Ok(())
 }
 
