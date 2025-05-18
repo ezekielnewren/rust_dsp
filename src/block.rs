@@ -2,6 +2,7 @@ use std::error::Error;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{BufWriter, Seek, Write};
+use std::marker::PhantomData;
 use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
 use alsa::PCM;
@@ -154,19 +155,12 @@ impl Filter<Complex32, f32> for MixerFilter {
 }
 
 
-pub struct CastFilter {}
-
-
-impl<I, O> Filter<I, O> for CastFilter
-where I: Copy + Into<O>
+pub fn cast_all<F, I, O>(func: F, input: &[I], output: &mut Vec<O>)
+where F: Fn(I) -> O, I: Copy
 {
-    fn filter(&mut self, input: &[I], output: &mut Vec<O>) -> Result<(), Box<dyn Error>> {
-        output.clear();
-        for v in input.iter().copied() {
-            output.push(v.into());
-        }
-        
-        Ok(())
+    output.clear();
+    for v in input.iter() {
+        output.push(func(*v));
     }
 }
 
