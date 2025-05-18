@@ -22,14 +22,6 @@ pub struct BufferBank<T> {
 
 
 impl<T> BufferBank<T> {
-    pub fn get(&mut self) -> (&mut Vec<T>, &mut Vec<T>) {
-        if self.direction {
-            (&mut self.buff0, &mut self.buff1)
-        } else {
-            (&mut self.buff1, &mut self.buff0)
-        }
-    }
-
     pub fn swap(&mut self) -> (&mut Vec<T>, &mut Vec<T>) {
         let result = if self.direction {
             (&mut self.buff0, &mut self.buff1)
@@ -86,10 +78,23 @@ impl WavSink<BufWriter<File>> {
 }
 
 
-impl<D: Write + Seek> Sink<i16> for WavSink<D> {
-    fn write(&mut self, src: &[i16]) -> Result<(), Box<dyn Error>> {
+impl<D: Write + Seek> Sink<f32> for WavSink<D> {
+    fn write(&mut self, src: &[f32]) -> Result<(), Box<dyn Error>> {
+        debug_assert!(self.writer.spec().channels == 1);
         for &sample in src {
-            self.writer.write_sample(sample)?;
+            self.writer.write_sample(sample as i16)?;
+        }
+        Ok(())
+    }
+}
+
+
+impl<D: Write + Seek> Sink<Complex32> for WavSink<D> {
+    fn write(&mut self, src: &[Complex32]) -> Result<(), Box<dyn Error>> {
+        debug_assert!(self.writer.spec().channels == 2);
+        for &sample in src {
+            self.writer.write_sample(sample.re as i16)?;
+            self.writer.write_sample(sample.im as i16)?;
         }
         Ok(())
     }
@@ -314,7 +319,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Instant;
     use crate::traits::{Sink, Source};
-    use crate::block::{AlsaSource, WavSink};
+    use crate::block::{cast_all, AlsaSource, WavSink};
 
     #[test]
     fn test_microphone() -> Result<(), Box<dyn std::error::Error>> {
@@ -326,15 +331,17 @@ mod tests {
         let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
         let mut total = 0;
-        let mut buff = vec![0; 1024];
+        let mut buff_raw = Vec::new();
+        let mut buff_real = Vec::new();
 
         let start = Instant::now();
         loop {
             if start.elapsed().as_secs_f32() > 3.0 {
                 break;
             }
-            if let Ok(read) = source.read(&mut buff) {
-                sink.write(buff.as_slice())?;
+            if let Ok(read) = source.read(&mut buff_raw) {
+                cast_all(|v| v as f32, buff_raw.as_slice(), &mut buff_real);
+                sink.write(buff_real.as_slice())?;
                 total += read;
             }
         }
