@@ -1,12 +1,11 @@
 use std::error::Error;
-use std::f32::consts::PI;
-use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::Instant;
 use bitvec::prelude::*;
-use crate::traits::{Sink, Source};
-use crate::block::{lowpass_complex, AlsaSource, Real2ComplexFilter, WavSink};
+use num_complex::Complex32;
+use crate::traits::{Filter, Sink, Source};
+use crate::block::*;
 
 pub mod traits;
 mod block;
@@ -80,8 +79,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let carrier_freq = 5e3f32;
     let cutoff_hz = 3e3f32;
     
-    let r2cf = Real2ComplexFilter::new(sample_rate, carrier_freq);
-    let lpf = lowpass_complex(sample_rate, cutoff_hz, 101);
+    let mut mixer = MixerFilter::new(sample_rate, carrier_freq);
+    let mut lpf = lowpass_complex(sample_rate, cutoff_hz, 101);
     
     let file_dest = canonical_path(argv[1].clone());
     
@@ -89,7 +88,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
     let mut total = 0;
-    let mut buff_raw_samples = Vec::new();
+    let mut buff_raw_samples = Vec::<i16>::new();
+    let mut buff_real_samples = Vec::<f32>::new();
+    let mut buff0 = Vec::<Complex32>::new();
+    let mut buff1 = Vec::<Complex32>::new();
     
     let start = Instant::now();
     loop {
@@ -97,6 +99,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             break;
         }
         if let Ok(read) = source.read(&mut buff_raw_samples) {
+            cast_all(|v| v as f32, buff_raw_samples.as_slice(), &mut buff_real_samples);
+            mixer.filter(buff_real_samples.as_slice(), &mut buff0)?;
+            lpf.filter(buff0.as_slice(), &mut buff1)?;
+            
+            // do something with the IQ samples
+            
+            
+            // write the IQ samples back out
+            mixer.filter(buff1.as_slice(), &mut buff_real_samples)?;
+            cast_all(|v| v as i16, buff_real_samples.as_slice(), &mut buff_raw_samples);
             sink.write(buff_raw_samples.as_slice())?;
             total += read;
         }
