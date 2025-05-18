@@ -90,8 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut total = 0;
     let mut buff_raw_samples = Vec::<i16>::new();
     let mut buff_real_samples = Vec::<f32>::new();
-    let mut buff0 = Vec::<Complex32>::new();
-    let mut buff1 = Vec::<Complex32>::new();
+    let mut bank = BufferBank::<Complex32>::default();
     
     let start = Instant::now();
     loop {
@@ -100,14 +99,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         if let Ok(read) = source.read(&mut buff_raw_samples) {
             cast_all(|v| v as f32, buff_raw_samples.as_slice(), &mut buff_real_samples);
-            mixer.filter(buff_real_samples.as_slice(), &mut buff0)?;
-            lpf.filter(buff0.as_slice(), &mut buff1)?;
+            
+            let (_, dst) = bank.swap();
+            mixer.filter(buff_real_samples.as_slice(), dst)?;
+            
+            let (src, dst) = bank.swap();
+            lpf.filter(src.as_slice(), dst)?;
             
             // do something with the IQ samples
             
             
             // write the IQ samples back out
-            mixer.filter(buff1.as_slice(), &mut buff_real_samples)?;
+            let (src, _) = bank.swap();
+            mixer.filter(src.as_slice(), &mut buff_real_samples)?;
             cast_all(|v| v as i16, buff_real_samples.as_slice(), &mut buff_raw_samples);
             sink.write(buff_raw_samples.as_slice())?;
             total += read;

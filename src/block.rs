@@ -13,6 +13,35 @@ use num_traits::Zero;
 use crate::traits::*;
 
 
+#[derive(Default)]
+pub struct BufferBank<T> {
+    buff0: Vec<T>,
+    buff1: Vec<T>,
+    direction: bool,
+}
+
+
+impl<T> BufferBank<T> {
+    pub fn get(&mut self) -> (&mut Vec<T>, &mut Vec<T>) {
+        if self.direction {
+            (&mut self.buff0, &mut self.buff1)
+        } else {
+            (&mut self.buff1, &mut self.buff0)
+        }
+    }
+
+    pub fn swap(&mut self) -> (&mut Vec<T>, &mut Vec<T>) {
+        let result = if self.direction {
+            (&mut self.buff0, &mut self.buff1)
+        } else {
+            (&mut self.buff1, &mut self.buff0)
+        };
+        self.direction = !self.direction;
+        result
+    }
+}
+
+
 pub struct WavSink<D: Write + Seek> {
     writer: WavWriter<D>,
 }
