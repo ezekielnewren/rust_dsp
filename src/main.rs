@@ -76,14 +76,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let argv: Vec<String> = std::env::args().collect();
 
     let sample_rate: usize = 44100;
-    let carrier_freq = 5e3f32;
-    let cutoff_hz = 3e3f32;
-    
+    let carrier_freq = 1350.0;
+    let cutoff_hz = 1500f32.max(carrier_freq);
+
     let mut mixer = MixerFilter::new(sample_rate, carrier_freq);
     let mut lpf = lowpass_complex(sample_rate, cutoff_hz, 101);
-    
+
     let file_dest = canonical_path(argv[1].clone());
-    
+
     let mut source = AlsaSource::default_source(sample_rate)?;
     let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
@@ -91,10 +91,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut buff_raw_samples = Vec::<i16>::new();
     let mut buff_real_samples = Vec::<f32>::new();
     let mut bank = BufferBank::<Complex32>::default();
-    
+
     let start = Instant::now();
     loop {
-        if start.elapsed().as_secs_f32() > 3.0 {
+        if start.elapsed().as_secs_f32() > 5.0 {
             break;
         }
         if let Ok(read) = source.read(&mut buff_raw_samples) {
@@ -117,9 +117,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             total += read;
         }
     }
-    
+
     println!("Total: {}", total);
-    
+
     Ok(())
 }
 
