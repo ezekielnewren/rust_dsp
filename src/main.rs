@@ -5,11 +5,11 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::time::Instant;
 use bitvec::prelude::*;
-use crate::block::{Sink, Source};
-use crate::impls::{lowpass_complex, AlsaSource, Real2ComplexFilter, WavSink};
+use crate::traits::{Sink, Source};
+use crate::block::{lowpass_complex, AlsaSource, Real2ComplexFilter, WavSink};
 
-pub mod block;
-mod impls;
+pub mod traits;
+mod block;
 
 struct Tone {
     freq: f32,
