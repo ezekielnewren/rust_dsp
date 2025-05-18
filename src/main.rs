@@ -84,15 +84,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
     let mut total = 0;
-    let mut buff = vec![0; 1024];
+    let mut buff0 = vec![0; 1024];
     
     let start = Instant::now();
     loop {
         if start.elapsed().as_secs_f32() > 3.0 {
             break;
         }
-        if let Ok(read) = source.read(buff.as_mut_slice()) {
-            sink.write(buff.as_slice())?;
+        if let Ok(read) = source.read(buff0.as_mut_slice()) {
+            sink.write(buff0.as_slice())?;
             total += read;
         }
     }

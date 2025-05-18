@@ -1,10 +1,12 @@
 use std::error::Error;
+use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{BufWriter, Seek, Write};
 use std::path::PathBuf;
 use alsa::PCM;
 use alsa::pcm::{Access, Format, HwParams};
 use hound::{WavSpec, WavWriter};
+use num_complex::Complex32;
 use crate::block::*;
 
 
@@ -71,7 +73,7 @@ impl AlsaSource {
         let it = Self {
             pcm: PCM::new(device, alsa::Direction::Capture, false)?,
         };
-        
+
         let hwp = HwParams::any(&it.pcm)?;
 
         let channels = 1;
@@ -98,6 +100,44 @@ impl Source<i16> for AlsaSource {
         Ok(self.pcm.io_i16()?.readi(dst)?)
     }
 }
+
+
+pub struct Real2ComplexFilter {
+    sample_rate: usize,
+    freq: f32,
+    phase: f32,
+}
+
+
+impl Real2ComplexFilter {
+    pub fn new(sample_rate: usize, freq: f32, phase: f32) -> Self {
+        Self {
+            sample_rate,
+            freq,
+            phase,
+        }
+    }
+}
+
+impl Filter<f32, Complex32> for Real2ComplexFilter {
+    fn filter(&mut self, input: &[f32], output: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
+        let omega = 2.0 * PI * self.freq / self.sample_rate as f32;
+        
+        if output.len() != input.len() {
+            output.resize(input.len(), Complex32::default());
+        }
+        
+        for (i, sample) in input.iter().copied().enumerate() {
+            let I = sample * self.phase.cos();
+            let Q = sample * self.phase.sin();
+            output[i] = Complex32 {re: I, im: -Q};
+            self.phase = (self.phase + omega).rem_euclid(2.0 * PI);
+        }
+        
+        Ok(())
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
