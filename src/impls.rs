@@ -124,18 +124,18 @@ impl Real2ComplexFilter {
 impl Filter<f32, Complex32> for Real2ComplexFilter {
     fn filter(&mut self, input: &[f32], output: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
         let omega = 2.0 * PI * self.freq / self.sample_rate as f32;
-        
+
         if output.len() != input.len() {
             output.resize(input.len(), Complex32::default());
         }
-        
+
         for (i, sample) in input.iter().copied().enumerate() {
             let I = sample * self.phase.cos();
             let Q = sample * self.phase.sin();
             output[i] = Complex32 {re: I, im: -Q};
             self.phase = (self.phase + omega).rem_euclid(2.0 * PI);
         }
-        
+
         Ok(())
     }
 }
@@ -146,6 +146,7 @@ where T: Arithmetic
 {
     taps: Vec<T>,
     history: Vec<T>,
+    index: usize,
 }
 
 
@@ -155,7 +156,30 @@ impl<T: Arithmetic> FIRFilter<T> {
         Self {
             taps,
             history: vec![T::zero(); len],
+            index: 0,
         }
+    }
+}
+
+
+impl<T: Arithmetic> Filter<T, T> for FIRFilter<T> {
+    fn filter(&mut self, input: &[T], output: &mut Vec<T>) -> Result<(), Box<dyn Error>> {
+        output.clear();
+        
+        for sample in input.iter().copied() {
+            self.history[self.index] = sample;
+            
+            let mut acc = T::zero();
+            for i in 0..self.taps.len() {
+                let slot = (self.index + self.taps.len() - i) % self.taps.len();
+                acc += self.taps[i] * self.history[slot];
+            }
+            output.push(acc);
+            
+            self.index = (self.index + 1) % self.taps.len();
+        }
+        
+        Ok(())
     }
 }
 
