@@ -234,6 +234,7 @@ dependencies = [
  "dirs",
  "hound",
  "num-complex",
+ "num-traits",
  "tempfile",
 ]
 

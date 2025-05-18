@@ -2,11 +2,13 @@ use std::error::Error;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{BufWriter, Seek, Write};
+use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
 use alsa::PCM;
 use alsa::pcm::{Access, Format, HwParams};
 use hound::{WavSpec, WavWriter};
 use num_complex::Complex32;
+use num_traits::Zero;
 use crate::block::*;
 
 
@@ -137,6 +139,59 @@ impl Filter<f32, Complex32> for Real2ComplexFilter {
         Ok(())
     }
 }
+
+
+pub struct FIRFilter<T>
+where T: Arithmetic
+{
+    taps: Vec<T>,
+    history: Vec<T>,
+}
+
+
+impl<T: Arithmetic> FIRFilter<T> {
+    pub fn new(taps: Vec<T>) -> Self {
+        let len = taps.len();
+        Self {
+            taps,
+            history: vec![T::zero(); len],
+        }
+    }
+}
+
+
+pub fn lowpass_real(sample_rate: usize, cutoff_hz: f32, num_taps: usize) -> FIRFilter<f32> {
+    let fc = cutoff_hz / sample_rate as f32;
+    let m = num_taps as isize - 1;
+
+    let mut taps: Vec<f32> = Vec::with_capacity(num_taps);
+
+    for n in 0..num_taps {
+        let n = n as isize;
+        let centered = n - m / 2;
+
+        let sinc = if centered == 0 {
+            2.0 * fc
+        } else {
+            (2.0 * PI *fc * centered as f32).sin() / (PI * centered as f32)
+        };
+
+
+        // Apply a Hamming window
+        let window = 0.54 - 0.46 * ((2.0 * PI * n as f32) / m as f32 ).cos();
+        taps.push(sinc * window);
+    }
+
+    FIRFilter::new(taps)
+}
+
+
+pub fn lowpass_complex(sample_rate: usize, cutoff_hz: f32, num_taps: usize) -> FIRFilter<Complex32> {
+    let tmp = lowpass_real(sample_rate, cutoff_hz, num_taps);
+    FIRFilter::new(tmp.taps.into_iter().map(|real| Complex32::from(real)).collect())
+}
+
+
 
 
 #[cfg(test)]
