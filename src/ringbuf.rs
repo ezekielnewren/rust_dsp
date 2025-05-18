@@ -25,24 +25,61 @@ impl<T: Copy> RingBuf<T> {
     }
 
     pub fn put(&mut self, mut buf: &[T]) -> usize {
-        let dst = &mut self.mem.as_mut_slice()[self.wp..self.wp + buf.len()];
-        dst.copy_from_slice(buf);
-        self.wp += buf.len();
-        self.size += buf.len();
-        buf.len()
+        if !self.overwrite {
+            let write = std::cmp::min(buf.len(), self.capacity() - self.size);
+            
+            if write < self.capacity() - self.wp {
+                let dst = &mut self.mem.as_mut_slice()[self.wp..self.wp + write];
+                dst.copy_from_slice(buf);
+            } else {
+                let first = self.capacity() - self.wp;
+                let dst = &mut self.mem.as_mut_slice()[self.wp..];
+                dst.copy_from_slice(&buf[..first]);
+                
+                let dst = &mut self.mem.as_mut_slice()[..write - first];
+                dst.copy_from_slice(&buf[first..write]);
+            }
+            
+            self.wp = (self.wp + write) % self.capacity();
+            self.size += write;
+            write
+        } else {
+            todo!()
+        }
     }
 
     pub fn get(&mut self, buf: &mut [T]) -> usize {
-        let src = &self.mem.as_slice()[self.rp..self.rp + buf.len()];
-        buf.copy_from_slice(src);
-        self.rp += buf.len();
-        self.size -= buf.len();
-        buf.len()
+        if !self.overwrite {
+            let read = std::cmp::min(buf.len(), self.size);
+            
+            if read < self.capacity() - self.rp {
+                let src = &self.mem.as_slice()[self.rp..self.rp + read];
+                buf.copy_from_slice(src);
+            } else {
+                let first = self.capacity() - self.rp;
+                let src = &self.mem.as_slice()[self.rp..];
+                buf[..first].copy_from_slice(src);
+                
+                let src = &self.mem.as_slice()[..read - first];
+                buf[first..read].copy_from_slice(src);
+            }
+            
+            self.rp = (self.rp + read) % self.capacity();
+            self.size -= read;
+            read
+        } else {
+            todo!()
+        }
     }
     
     pub fn len(&self) -> usize {
         self.size
     }
+    
+    pub fn capacity(&self) -> usize {
+        self.mem.capacity()
+    }
+    
 }
 
 
@@ -73,16 +110,18 @@ mod tests {
 
     #[test]
     fn test_ringbuf() -> std::io::Result<()> {
-        let mut ring = RingBuf::<u8>::new(1000, true);
+        let mut ring = RingBuf::<u8>::new(50, false);
         
         let message = "hello world, this is your programmer writing";
         
         let mut buff = Vec::<u8>::new();
+        buff.resize(message.as_bytes().len(), 0);
         
-        let r = ring.write(message.as_bytes())?;
-        buff.resize(r, 0);
-        
-        let w = ring.read(buff.as_mut_slice())?;
+        let _ = ring.write(message.as_bytes())?;
+        let _ = ring.read(buff.as_mut_slice())?;
+
+        let _ = ring.write(message.as_bytes())?;
+        let _ = ring.read(buff.as_mut_slice())?;
         
         assert_eq!(message.as_bytes(), buff.as_slice());
         
