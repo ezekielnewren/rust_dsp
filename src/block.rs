@@ -154,6 +154,23 @@ impl Filter<Complex32, f32> for MixerFilter {
 }
 
 
+pub struct CastFilter {}
+
+
+impl<I, O> Filter<I, O> for CastFilter
+where I: Copy + Into<O>
+{
+    fn filter(&mut self, input: &[I], output: &mut Vec<O>) -> Result<(), Box<dyn Error>> {
+        output.clear();
+        for v in input.iter().copied() {
+            output.push(v.into());
+        }
+        
+        Ok(())
+    }
+}
+
+
 pub struct FIRFilter<T>
 where T: Arithmetic
 {
@@ -178,20 +195,20 @@ impl<T: Arithmetic> FIRFilter<T> {
 impl<T: Arithmetic> Filter<T, T> for FIRFilter<T> {
     fn filter(&mut self, input: &[T], output: &mut Vec<T>) -> Result<(), Box<dyn Error>> {
         output.clear();
-        
+
         for sample in input.iter().copied() {
             self.history[self.index] = sample;
-            
+
             let mut acc = T::zero();
             for i in 0..self.taps.len() {
                 let slot = (self.index + self.taps.len() - i) % self.taps.len();
                 acc += self.taps[i] * self.history[slot];
             }
             output.push(acc);
-            
+
             self.index = (self.index + 1) % self.taps.len();
         }
-        
+
         Ok(())
     }
 }
