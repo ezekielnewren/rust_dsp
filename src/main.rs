@@ -8,7 +8,8 @@ use crate::traits::{Filter, Sink, Source};
 use crate::block::*;
 
 pub mod traits;
-mod block;
+pub mod block;
+pub mod ringbuf;
 
 struct Tone {
     freq: f32,
