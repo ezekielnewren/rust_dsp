@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 use bitvec::prelude::*;
 use crate::block::{Sink, Source};
-use crate::impls::{AlsaSource, WavSink};
+use crate::impls::{lowpass_complex, AlsaSource, Real2ComplexFilter, WavSink};
 
 pub mod block;
 mod impls;
@@ -77,22 +77,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let argv: Vec<String> = std::env::args().collect();
 
     let sample_rate: usize = 44100;
-
+    let carrier_freq = 5e3f32;
+    let cutoff_hz = 3e3f32;
+    
+    let r2cf = Real2ComplexFilter::new(sample_rate, carrier_freq);
+    let lpf = lowpass_complex(sample_rate, cutoff_hz, 101);
+    
     let file_dest = canonical_path(argv[1].clone());
     
     let mut source = AlsaSource::default_source(sample_rate)?;
     let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
     let mut total = 0;
-    let mut buff0 = vec![0; 1024];
+    let mut buff_raw_samples = Vec::new();
     
     let start = Instant::now();
     loop {
         if start.elapsed().as_secs_f32() > 3.0 {
             break;
         }
-        if let Ok(read) = source.read(buff0.as_mut_slice()) {
-            sink.write(buff0.as_slice())?;
+        if let Ok(read) = source.read(&mut buff_raw_samples) {
+            sink.write(buff_raw_samples.as_slice())?;
             total += read;
         }
     }

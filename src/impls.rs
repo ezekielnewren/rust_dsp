@@ -68,12 +68,14 @@ impl<D: Write + Seek> Sink<i16> for WavSink<D> {
 
 pub struct AlsaSource {
     pcm: PCM,
+    samples_per_buffer: usize,
 }
 
 impl AlsaSource {
-    pub fn new(sample_rate: usize, device: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn new(sample_rate: usize, samples_per_buffer: usize, device: &str) -> Result<Self, Box<dyn Error>> {
         let it = Self {
             pcm: PCM::new(device, alsa::Direction::Capture, false)?,
+            samples_per_buffer,
         };
 
         let hwp = HwParams::any(&it.pcm)?;
@@ -92,13 +94,16 @@ impl AlsaSource {
     }
     
     pub fn default_source(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
-        Self::new(sample_rate, "default")
+        Self::new(sample_rate, 1024, "default")
     }
 }
 
 
 impl Source<i16> for AlsaSource {
-    fn read(&mut self, dst: &mut [i16]) -> Result<usize, Box<dyn Error>> {
+    fn read(&mut self, dst: &mut Vec<i16>) -> Result<usize, Box<dyn Error>> {
+        if dst.len() != self.samples_per_buffer {
+            dst.resize(self.samples_per_buffer, 0);
+        }
         Ok(self.pcm.io_i16()?.readi(dst)?)
     }
 }
@@ -112,11 +117,11 @@ pub struct Real2ComplexFilter {
 
 
 impl Real2ComplexFilter {
-    pub fn new(sample_rate: usize, freq: f32, phase: f32) -> Self {
+    pub fn new(sample_rate: usize, freq: f32) -> Self {
         Self {
             sample_rate,
             freq,
-            phase,
+            phase: 0.0,
         }
     }
 }
@@ -242,7 +247,7 @@ mod tests {
             if start.elapsed().as_secs_f32() > 3.0 {
                 break;
             }
-            if let Ok(read) = source.read(buff.as_mut_slice()) {
+            if let Ok(read) = source.read(&mut buff) {
                 sink.write(buff.as_slice())?;
                 total += read;
             }

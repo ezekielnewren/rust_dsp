@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use num_traits::{One, Zero};
 
 pub trait Source<I> {
-    fn read(&mut self, dst: &mut [I]) -> Result<usize, Box<dyn Error>>;
+    fn read(&mut self, dst: &mut Vec<I>) -> Result<usize, Box<dyn Error>>;
 }
 
 pub trait Filter<I, O> {
