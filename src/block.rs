@@ -109,36 +109,44 @@ impl Source<i16> for AlsaSource {
 }
 
 
-pub struct Real2ComplexFilter {
-    sample_rate: usize,
-    freq: f32,
+pub struct MixerFilter {
     phase: f32,
+    omega: f32,
 }
 
 
-impl Real2ComplexFilter {
+impl MixerFilter {
     pub fn new(sample_rate: usize, freq: f32) -> Self {
         Self {
-            sample_rate,
-            freq,
             phase: 0.0,
+            omega: 2.0 * PI * freq / sample_rate as f32,
         }
     }
 }
 
-impl Filter<f32, Complex32> for Real2ComplexFilter {
+impl Filter<f32, Complex32> for MixerFilter {
     fn filter(&mut self, input: &[f32], output: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
-        let omega = 2.0 * PI * self.freq / self.sample_rate as f32;
-
-        if output.len() != input.len() {
-            output.resize(input.len(), Complex32::default());
+        output.clear();
+        for sample in input.iter().copied() {
+            let (sin, cos) = self.phase.sin_cos();
+            let (i, q) = (sample * cos, sample * sin);
+            output.push(Complex32 {re: i, im: -q});
+            self.phase = (self.phase + self.omega).rem_euclid(2.0 * PI);
         }
 
-        for (i, sample) in input.iter().copied().enumerate() {
-            let I = sample * self.phase.cos();
-            let Q = sample * self.phase.sin();
-            output[i] = Complex32 {re: I, im: -Q};
-            self.phase = (self.phase + omega).rem_euclid(2.0 * PI);
+        Ok(())
+    }
+}
+
+
+impl Filter<Complex32, f32> for MixerFilter {
+    fn filter(&mut self, input: &[Complex32], output: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
+        output.clear();
+        for sample in input.iter() {
+            let (sin, cos) = self.phase.sin_cos();
+            let real = sample.re * cos - sample.im * sin;
+            output.push(real);
+            self.phase = (self.phase + self.omega).rem_euclid(2.0 * PI);
         }
 
         Ok(())
