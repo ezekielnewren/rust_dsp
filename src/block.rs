@@ -139,6 +139,44 @@ impl Source<i16> for AlsaSource {
 }
 
 
+pub struct AlsaSink {
+    pcm: PCM,
+}
+
+impl AlsaSink {
+    pub fn new(sample_rate: usize, device: &str) -> Result<Self, Box<dyn Error>> {
+        let pcm = PCM::new(device, alsa::Direction::Playback, false)?;
+
+        let hwp = HwParams::any(&pcm)?;
+        let channels = 1;
+        let format = Format::s16();
+
+        hwp.set_channels(channels)?;
+        hwp.set_rate(sample_rate as u32, alsa::ValueOr::Nearest)?;
+        hwp.set_format(format)?;
+        hwp.set_access(Access::RWInterleaved)?;
+        pcm.hw_params(&hwp)?;
+        drop(hwp);
+
+        Ok(Self {
+            pcm,
+        })
+    }
+
+    pub fn default_sink(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
+        Self::new(sample_rate, "default")
+    }
+}
+
+impl Sink<i16> for AlsaSink {
+    fn write(&mut self, src: &[i16]) -> Result<(), Box<dyn Error>> {
+        self.pcm.io_i16()?.writei(src)?;
+        Ok(())
+    }
+}
+
+
+
 pub struct MixerFilter {
     phase: f32,
     omega: f32,
