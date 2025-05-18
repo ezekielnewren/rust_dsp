@@ -1,13 +1,12 @@
 use std::error::Error;
 use std::f32::consts::PI;
 use std::fs::File;
-use std::io::{BufWriter, Seek, Write};
-use std::marker::PhantomData;
+use std::io::{BufReader, BufWriter, ErrorKind, Read, Seek, Write};
 use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
 use alsa::PCM;
 use alsa::pcm::{Access, Format, HwParams};
-use hound::{WavSpec, WavWriter};
+use hound::{WavReader, WavSpec, WavWriter};
 use num_complex::Complex32;
 use num_traits::Zero;
 use crate::traits::*;
@@ -30,6 +29,59 @@ impl<T> BufferBank<T> {
         };
         self.direction = !self.direction;
         result
+    }
+}
+
+
+pub struct WavSource<D: Read> {
+    reader: WavReader<D>,
+    samples_per_buffer: usize,
+}
+
+
+impl WavSource<BufReader<File>> {
+    pub fn new(path: PathBuf, samples_per_buffer: usize) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            reader: WavReader::open(path)?,
+            samples_per_buffer,
+        })
+    }
+}
+
+
+impl<D: Read> Source<f32> for WavSource<D> {
+    fn read(&mut self, dst: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
+        debug_assert!(self.reader.spec().channels == 1);
+        dst.clear();
+        let it = self.reader.samples::<i16>();
+        for sample in it {
+            dst.push(sample? as f32);
+            if dst.len() >= self.samples_per_buffer {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
+
+impl<D: Read> Source<Complex32> for WavSource<D> {
+    fn read(&mut self, dst: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
+        debug_assert!(self.reader.spec().channels == 2);
+        dst.clear();
+        let mut it = self.reader.samples::<i16>();
+        while let Some(Ok(re)) = it.next() {
+            if let Some(Ok(im)) = it.next() {
+                let c = Complex32::new(re as f32, im as f32);
+                dst.push(c);
+                if dst.len() >= self.samples_per_buffer {
+                    break;
+                }
+            } else {
+                return Err(Box::new(std::io::Error::new(ErrorKind::UnexpectedEof, "unexpected eof")));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -135,11 +187,12 @@ impl AlsaSource {
 
 
 impl Source<i16> for AlsaSource {
-    fn read(&mut self, dst: &mut Vec<i16>) -> Result<usize, Box<dyn Error>> {
+    fn read(&mut self, dst: &mut Vec<i16>) -> Result<(), Box<dyn Error>> {
         if dst.len() != self.samples_per_buffer {
             dst.resize(self.samples_per_buffer, 0);
         }
-        Ok(self.pcm.io_i16()?.readi(dst)?)
+        self.pcm.io_i16()?.readi(dst)?;
+        Ok(())
     }
 }
 
@@ -339,10 +392,10 @@ mod tests {
             if start.elapsed().as_secs_f32() > 3.0 {
                 break;
             }
-            if let Ok(read) = source.read(&mut buff_raw) {
+            if let Ok(()) = source.read(&mut buff_raw) {
                 cast_all(|v| v as f32, buff_raw.as_slice(), &mut buff_real);
+                total += buff_real.len();
                 sink.write(buff_real.as_slice())?;
-                total += read;
             }
         }
 

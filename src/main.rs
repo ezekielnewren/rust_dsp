@@ -112,8 +112,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             // write the IQ samples back out
             let (src, _) = bank.swap();
             mixer.filter(src.as_slice(), &mut buff_real_samples)?;
+            total += buff_real_samples.len();
             sink.write(buff_real_samples.as_slice())?;
-            total += read;
         }
     }
 
