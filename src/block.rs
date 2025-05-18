@@ -46,6 +46,10 @@ impl WavSource<BufReader<File>> {
             samples_per_buffer,
         })
     }
+
+    pub fn spec(&self) -> WavSpec {
+        self.reader.spec()
+    }
 }
 
 
@@ -201,12 +205,19 @@ pub struct AlsaSink {
     pcm: PCM,
 }
 
+
+impl Drop for AlsaSink {
+    fn drop(&mut self) {
+        self.pcm.drain().unwrap();
+    }
+}
+
+
 impl AlsaSink {
-    pub fn new(sample_rate: usize, device: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn new(sample_rate: usize, channels: u32, device: &str) -> Result<Self, Box<dyn Error>> {
         let pcm = PCM::new(device, alsa::Direction::Playback, false)?;
 
         let hwp = HwParams::any(&pcm)?;
-        let channels = 1;
         let format = Format::s16();
 
         hwp.set_channels(channels)?;
@@ -221,8 +232,8 @@ impl AlsaSink {
         })
     }
 
-    pub fn default_sink(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
-        Self::new(sample_rate, "default")
+    pub fn default_sink(sample_rate: usize, channels: u32) -> Result<Self, Box<dyn Error>> {
+        Self::new(sample_rate, channels,"default")
     }
 }
 
