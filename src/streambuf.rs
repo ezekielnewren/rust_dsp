@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Condvar, Mutex};
 use crate::ringbuf::RingBuf;
 
@@ -90,6 +90,13 @@ impl<T: Copy> Drop for StreamReader<T> {
 }
 
 
+impl Read for StreamReader<u8> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.get(buf)
+    }
+}
+
+
 impl<T: Copy> StreamWriter<T> {
     pub fn put(&self, buf: &[T]) -> std::io::Result<usize> {
         if buf.len() == 0 {
@@ -125,4 +132,21 @@ impl<T: Copy> Drop for StreamWriter<T> {
     }
 }
 
+impl Write for StreamWriter<u8> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.put(buf)
+    }
 
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut inner = self.writer.lock().unwrap();
+        if inner.block_write {
+            while inner.ring.len() > 0 {
+                inner = self.condvar.wait(inner).unwrap();
+            }
+        } else if inner.ring.len() > 0 {
+            return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer is not empty yet"));
+        }
+
+        Ok(())
+    }
+}
