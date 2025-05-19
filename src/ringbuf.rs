@@ -93,27 +93,8 @@ impl<T: Copy> RingBuf<T> {
 }
 
 
-impl Read for RingBuf<u8> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        Ok(self.get(buf))
-    }
-}
-
-impl Write for RingBuf<u8> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        Ok(self.put(buf))
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-
-
 #[cfg(test)]
 mod tests {
-    use std::io::{Read, Write};
     use crate::ringbuf::RingBuf;
 
 
@@ -130,9 +111,9 @@ mod tests {
         let mut buff = Vec::<u8>::new();
         buff.resize(message.len(), 0);
 
-        let w = ring.write(message)?;
+        let w = ring.put(message);
         assert_eq!(message.len(), w);
-        let r = ring.read(buff.as_mut_slice())?;
+        let r = ring.get(buff.as_mut_slice());
         assert_eq!(capacity, r);
         
         let expected = unsafe {
@@ -157,11 +138,11 @@ mod tests {
         let mut buff = Vec::<u8>::new();
         buff.resize(message.as_bytes().len(), 0);
         
-        let _ = ring.write(message.as_bytes())?;
-        let _ = ring.read(buff.as_mut_slice())?;
+        let _ = ring.put(message.as_bytes());
+        let _ = ring.get(buff.as_mut_slice());
 
-        let _ = ring.write(message.as_bytes())?;
-        let _ = ring.read(buff.as_mut_slice())?;
+        let _ = ring.put(message.as_bytes());
+        let _ = ring.get(buff.as_mut_slice());
         
         assert_eq!(message.as_bytes(), buff.as_slice());
         
@@ -178,14 +159,14 @@ mod tests {
         
         let mut off = 0;
         while off < expected.len() {
-            let w = ring.write(&expected[off..])?;
+            let w = ring.put(&expected[off..]);
             let end = off + w;
             if actual.capacity() < end {
                 actual.reserve(end - actual.capacity());
             }
             unsafe { actual.set_len(end); }
             
-            let r = ring.read(&mut actual.as_mut_slice()[off..end])?;
+            let r = ring.get(&mut actual.as_mut_slice()[off..end]);
             assert_eq!(w, r);
             off += w;
         }
@@ -209,10 +190,10 @@ mod tests {
         
         let mut off = 0;
         
-        off += ring.write(expected)?;
+        off += ring.put(expected);
         assert_eq!(capacity, off);
         
-        let w = ring.write(&expected[off..])?;
+        let w = ring.put(&expected[off..]);
         assert_eq!(0, w);
         
         Ok(())
