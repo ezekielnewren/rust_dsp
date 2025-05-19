@@ -37,7 +37,7 @@ pub fn new_stream<T: Copy>(capacity: usize, overwrite: bool, block_write: bool, 
         read_closed: false,
         write_closed: false,
     }));
-    
+
     let condvar = Arc::new(Condvar::default());
 
     let read = StreamReader {
@@ -56,6 +56,10 @@ pub fn new_stream<T: Copy>(capacity: usize, overwrite: bool, block_write: bool, 
 
 impl<T: Copy> StreamReader<T> {
     pub fn get(&self, buf: &mut [T]) -> std::io::Result<usize> {
+        if buf.len() == 0 {
+            return Err(std::io::Error::new(ErrorKind::InvalidInput, "buffer is zero length"));
+        }
+
         let mut inner = self.reader.lock().unwrap();
         if inner.block_read {
             while inner.ring.len() == 0 {
@@ -88,6 +92,10 @@ impl<T: Copy> Drop for StreamReader<T> {
 
 impl<T: Copy> StreamWriter<T> {
     pub fn put(&self, buf: &[T]) -> std::io::Result<usize> {
+        if buf.len() == 0 {
+            return Err(std::io::Error::new(ErrorKind::InvalidInput, "buffer is zero length"));
+        }
+
         let mut inner = self.writer.lock().unwrap();
         if inner.write_closed {
             return Err(std::io::Error::new(ErrorKind::Other, "output is closed"));
