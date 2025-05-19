@@ -42,6 +42,7 @@ impl<T: Copy> RingBuf<T> {
             
             self.wp = (self.wp + write) % self.capacity();
             self.size += write;
+            debug_assert!(self.size <= self.capacity());
             write
         } else {
             
@@ -62,24 +63,20 @@ impl<T: Copy> RingBuf<T> {
         }
     }
 
-    pub fn get(&mut self, buf: &mut [T]) -> usize {
-        let read = std::cmp::min(buf.len(), self.size);
+    pub fn get(&mut self, mut buf: &mut [T]) -> usize {
+        let len = buf.len();
+        buf = &mut buf[0..std::cmp::min(len, self.size)];
         
-        if read <= self.capacity() - self.rp {
-            let src = &self.mem.as_slice()[self.rp..self.rp + read];
-            buf[..read].copy_from_slice(src);
-        } else {
-            let first = self.capacity() - self.rp;
-            let src = &self.mem.as_slice()[self.rp..];
-            buf[..first].copy_from_slice(src);
-            
-            let src = &self.mem.as_slice()[..read - first];
-            buf[first..read].copy_from_slice(src);
+        let mut off = 0;
+        while off < buf.len() {
+            let read = std::cmp::min(buf.len() - off, self.capacity() - self.rp);
+            buf[off..off + read].copy_from_slice(&self.mem.as_slice()[self.rp..self.rp + read]);
+            self.rp = (self.rp + read) % self.capacity();
+            self.size -= read;
+            off += read;
         }
         
-        self.rp = (self.rp + read) % self.capacity();
-        self.size -= read;
-        read
+        buf.len()
     }
     
     pub fn len(&self) -> usize {
