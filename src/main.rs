@@ -10,6 +10,7 @@ use crate::block::*;
 pub mod traits;
 pub mod block;
 pub mod ringbuf;
+pub mod streambuf;
 
 struct Tone {
     freq: f32,
