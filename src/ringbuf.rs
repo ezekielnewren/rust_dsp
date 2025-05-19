@@ -26,41 +26,24 @@ impl<T: Copy> RingBuf<T> {
 
     pub fn put(&mut self, mut buf: &[T]) -> usize {
         if !self.overwrite {
-            let write = std::cmp::min(buf.len(), self.capacity() - self.size);
-            
-            if write <= self.capacity() - self.wp {
-                let dst = &mut self.mem.as_mut_slice()[self.wp..self.wp + write];
-                dst.copy_from_slice(&buf[..write]);
-            } else {
-                let first = self.capacity() - self.wp;
-                let dst = &mut self.mem.as_mut_slice()[self.wp..];
-                dst.copy_from_slice(&buf[..first]);
-                
-                let dst = &mut self.mem.as_mut_slice()[..write - first];
-                dst.copy_from_slice(&buf[first..write]);
-            }
-            
+            buf = &buf[..std::cmp::min(buf.len(), self.capacity() - self.size)];
+        }
+
+        let mut off = 0;
+        while off < buf.len() {
+            let write = std::cmp::min(buf.len() - off, self.capacity() - self.wp);
+            self.mem.as_mut_slice()[self.wp..self.wp + write].copy_from_slice(&buf[off..off + write]);
+            off += write;
             self.wp = (self.wp + write) % self.capacity();
             self.size += write;
-            debug_assert!(self.size <= self.capacity());
-            write
-        } else {
-            
-            let mut off = 0;
-            while off < buf.len() {
-                let write = std::cmp::min(buf.len() - off, self.capacity() - self.wp);
-                self.mem.as_mut_slice()[self.wp..self.wp + write].copy_from_slice(&buf[off..off + write]);
-                off += write;
-                self.wp = (self.wp + write) % self.capacity();
-                self.size += write;
-                if self.size > self.capacity() {
-                    self.rp = (self.rp + (self.size - self.capacity())) % self.capacity();
-                    self.size = self.capacity();
-                }
+            if self.size > self.capacity() {
+                debug_assert!(self.overwrite);
+                self.rp = (self.rp + (self.size - self.capacity())) % self.capacity();
+                self.size = self.capacity();
             }
-            
-            buf.len()
         }
+
+        buf.len()
     }
 
     pub fn get(&mut self, mut buf: &mut [T]) -> usize {
