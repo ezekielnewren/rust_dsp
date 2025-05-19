@@ -167,5 +167,26 @@ mod tests {
         
         Ok(())
     }
+
+
+    #[test]
+    fn test_send() -> std::io::Result<()> {
+        let (reader, writer) = new_stream::<f32>(1024, true, false, true)?;
+        
+        let writer_thread = std::thread::spawn(move || {
+            let buff = [0f32];
+            writer.put(&buff).unwrap();
+        });
+        
+        let reader_thread = std::thread::spawn(move || {
+            let mut buff = [0f32];
+            reader.get(&mut buff).unwrap();
+        });
+        
+        writer_thread.join().unwrap();
+        reader_thread.join().unwrap();
+        
+        Ok(())
+    }
     
 }
