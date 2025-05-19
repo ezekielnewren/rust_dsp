@@ -150,3 +150,22 @@ impl Write for StreamWriter<u8> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::streambuf::new_stream;
+
+    #[test]
+    fn test_create() -> std::io::Result<()> {
+        let (reader, writer) = new_stream::<f32>(1024, true, false, true)?;
+        
+        let mut buff = Vec::<f32>::new();
+        buff.push(0.0);
+        
+        writer.put(buff.as_slice())?;
+        reader.get(buff.as_mut_slice())?;
+        
+        Ok(())
+    }
+    
+}
