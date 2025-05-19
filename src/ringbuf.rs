@@ -5,7 +5,7 @@ pub struct RingBuf<T: Copy> {
     rp: usize,
     wp: usize,
     size: usize,
-    overwrite: bool,
+    pub(crate) overwrite: bool,
 }
 
 
