@@ -62,6 +62,12 @@ impl<T: Copy> RingBuf<T> {
         buf.len()
     }
     
+    pub fn clear(&mut self) {
+        self.rp = 0;
+        self.wp = 0;
+        self.size = 0;
+    }
+    
     pub fn len(&self) -> usize {
         self.size
     }
