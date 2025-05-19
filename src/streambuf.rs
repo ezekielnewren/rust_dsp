@@ -45,6 +45,8 @@ impl<T: Copy> StreamBuf<T> {
             while inner.ring.len() == inner.ring.capacity() {
                 inner = self.condvar.wait(inner).unwrap();
             }
+        } else if inner.ring.len() == inner.ring.capacity() {
+            return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer full"));
         }
         
         let write = inner.ring.put(buf);
@@ -63,6 +65,8 @@ impl<T: Copy> StreamBuf<T> {
                 }
                 inner = self.condvar.wait(inner).unwrap();
             }
+        } else if inner.ring.len() == 0 {
+            return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer empty"));
         }
         
         let read = inner.ring.get(buf);
@@ -77,11 +81,6 @@ impl<T: Copy> StreamBuf<T> {
         inner.eof = true;
         self.condvar.notify_all();
         Ok(())
-    }
-    
-    pub fn is_eof(&self) -> std::io::Result<bool> {
-        let inner = self.inner.lock().unwrap();
-        Ok(inner.eof)
     }
     
 }
