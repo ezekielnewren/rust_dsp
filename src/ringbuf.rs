@@ -153,6 +153,29 @@ mod tests {
         Ok(())
     }
     
+    #[test]
+    fn test_ringbuf_write_to_full_buf_without_overwrite() -> std::io::Result<()> {
+        let capacity = 10;
+        
+        let mut ring = RingBuf::<u8>::new(capacity, false);
+
+        let expected = "hello world, this is your programmer writing".as_bytes();
+        
+        ring.rp = 3;
+        ring.wp = 3;
+        ring.size = 0;
+        
+        let mut off = 0;
+        
+        off += ring.write(expected)?;
+        assert_eq!(capacity, off);
+        
+        let w = ring.write(&expected[off..])?;
+        assert_eq!(0, w);
+        
+        Ok(())
+    }
+    
 }
 
 
