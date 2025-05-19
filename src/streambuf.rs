@@ -112,7 +112,7 @@ impl<T: Copy> StreamWriter<T> {
             while inner.ring.len() == inner.ring.capacity() {
                 inner = self.condvar.wait(inner).unwrap();
             }
-        } else if inner.ring.len() == inner.ring.capacity() {
+        } else if !inner.ring.overwrite && inner.ring.len() == inner.ring.capacity() {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer full"));
         }
 
