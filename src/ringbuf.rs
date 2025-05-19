@@ -28,9 +28,9 @@ impl<T: Copy> RingBuf<T> {
         if !self.overwrite {
             let write = std::cmp::min(buf.len(), self.capacity() - self.size);
             
-            if write < self.capacity() - self.wp {
+            if write <= self.capacity() - self.wp {
                 let dst = &mut self.mem.as_mut_slice()[self.wp..self.wp + write];
-                dst.copy_from_slice(buf);
+                dst.copy_from_slice(&buf[..write]);
             } else {
                 let first = self.capacity() - self.wp;
                 let dst = &mut self.mem.as_mut_slice()[self.wp..];
@@ -52,9 +52,9 @@ impl<T: Copy> RingBuf<T> {
         if !self.overwrite {
             let read = std::cmp::min(buf.len(), self.size);
             
-            if read < self.capacity() - self.rp {
+            if read <= self.capacity() - self.rp {
                 let src = &self.mem.as_slice()[self.rp..self.rp + read];
-                buf.copy_from_slice(src);
+                buf[..read].copy_from_slice(src);
             } else {
                 let first = self.capacity() - self.rp;
                 let src = &self.mem.as_slice()[self.rp..];
@@ -85,15 +85,13 @@ impl<T: Copy> RingBuf<T> {
 
 impl Read for RingBuf<u8> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.get(buf);
-        Ok(buf.len())
+        Ok(self.get(buf))
     }
 }
 
 impl Write for RingBuf<u8> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.put(buf);
-        Ok(buf.len())
+        Ok(self.put(buf))
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -109,7 +107,7 @@ mod tests {
     use crate::ringbuf::RingBuf;
 
     #[test]
-    fn test_ringbuf() -> std::io::Result<()> {
+    fn test_ringbuf_wrap_around() -> std::io::Result<()> {
         let mut ring = RingBuf::<u8>::new(50, false);
         
         let message = "hello world, this is your programmer writing";
@@ -125,6 +123,33 @@ mod tests {
         
         assert_eq!(message.as_bytes(), buff.as_slice());
         
+        Ok(())
+    }
+
+    #[test]
+    fn test_ringbuf_too_big() -> std::io::Result<()> {
+        let mut ring = RingBuf::<u8>::new(10, false);
+
+        let expected = "hello world, this is your programmer writing".as_bytes();
+
+        let mut actual = Vec::<u8>::new();
+        
+        let mut off = 0;
+        while off < expected.len() {
+            let w = ring.write(&expected[off..])?;
+            let end = off + w;
+            if actual.capacity() < end {
+                actual.reserve(end - actual.capacity());
+            }
+            unsafe { actual.set_len(end); }
+            
+            let r = ring.read(&mut actual.as_mut_slice()[off..end])?;
+            assert_eq!(w, r);
+            off += w;
+        }
+        
+        assert_eq!(expected, actual.as_slice());
+
         Ok(())
     }
     
