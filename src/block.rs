@@ -328,7 +328,23 @@ impl CpalSink {
 
 
         let stream = device.build_output_stream(&config, move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-            reader.get(data).unwrap();
+            let result = reader.get(data);
+            match result {
+                Ok(0) => {
+                    data.fill(0);
+                },
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                    data.fill(0);
+                },
+                Ok(read) => {
+                    if read < data.len() {
+                        data[read..].fill(0);
+                    }
+                },
+                Err(e) => {
+                    panic!("{}", e);
+                }
+            }
         },
                                                 move |error: cpal::StreamError| {
                                                     panic!("{}", error);
