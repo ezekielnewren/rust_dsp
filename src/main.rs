@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let file_src = canonical_path(argv[1].clone());
     
-    let mut source = WavSource::new(file_src, 1024)?;
+    let mut source = WavSource::new(file_src, 0)?;
     let sample_rate = source.spec().sample_rate as usize;
     let mut sink = Speakers::new(sample_rate, 2)?;
     

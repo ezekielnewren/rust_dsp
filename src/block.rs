@@ -42,10 +42,14 @@ pub struct WavSource<D: Read> {
 
 impl WavSource<BufReader<File>> {
     pub fn new(path: PathBuf, samples_per_buffer: usize) -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
+        let mut it = Self {
             reader: WavReader::open(path)?,
             samples_per_buffer,
-        })
+        };
+        if samples_per_buffer == 0 {
+            it.samples_per_buffer = it.reader.spec().sample_rate as usize;
+        }
+        Ok(it)
     }
 
     pub fn spec(&self) -> WavSpec {
