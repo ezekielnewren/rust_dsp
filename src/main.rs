@@ -11,6 +11,7 @@ pub mod traits;
 pub mod block;
 pub mod ringbuf;
 pub mod streambuf;
+pub mod util;
 
 struct Tone {
     freq: f32,
