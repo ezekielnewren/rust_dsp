@@ -81,7 +81,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     let mut source = WavSource::new(file_src, 1024)?;
     let sample_rate = source.spec().sample_rate as usize;
-    let mut sink = AlsaSink::new(sample_rate, source.spec().channels as u32, "default")?;
+    // let mut sink = AlsaSink::new(sample_rate, source.spec().channels as u32, "default")?;
+    let mut sink = CpalSink::new(sample_rate, 2)?;
     
     let mut raw = Vec::<Complex32>::new();
     let mut out = Vec::<i16>::new();

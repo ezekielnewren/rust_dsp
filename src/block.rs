@@ -299,7 +299,7 @@ impl Source<i16> for CpalSource {
         if dst.len() < sample_rate {
             unsafe { dst.set_len(dst.capacity()); }
         }
-        
+
         let read = self.reader.get(dst.as_mut_slice())?;
         unsafe { dst.set_len(read); }
         Ok(())
@@ -357,6 +357,14 @@ impl Sink<i16> for CpalSink {
         }
         Ok(())
     }
+}
+
+
+impl Drop for CpalSink {
+    fn drop(&mut self) {
+        self.writer.drain().unwrap()
+    }
+    
 }
 
 

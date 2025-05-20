@@ -122,6 +122,20 @@ impl<T: Copy> StreamWriter<T> {
         }
         Ok(write)
     }
+    
+    pub fn drain(&mut self) -> std::io::Result<()> {
+        let mut inner = self.writer.lock().unwrap();
+        if inner.block_write {
+            while inner.ring.len() > 0 {
+                inner = self.condvar.wait(inner).unwrap();
+            }
+        } else if inner.ring.len() > 0 {
+            return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer is not empty yet"));
+        }
+
+        Ok(())
+    }
+    
 }
 
 impl<T: Copy> Drop for StreamWriter<T> {
@@ -138,16 +152,7 @@ impl Write for StreamWriter<u8> {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let mut inner = self.writer.lock().unwrap();
-        if inner.block_write {
-            while inner.ring.len() > 0 {
-                inner = self.condvar.wait(inner).unwrap();
-            }
-        } else if inner.ring.len() > 0 {
-            return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer is not empty yet"));
-        }
-
-        Ok(())
+        self.drain()
     }
 }
 
