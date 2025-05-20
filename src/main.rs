@@ -81,8 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     let mut source = WavSource::new(file_src, 1024)?;
     let sample_rate = source.spec().sample_rate as usize;
-    // let mut sink = AlsaSink::new(sample_rate, source.spec().channels as u32, "default")?;
-    let mut sink = CpalSink::new(sample_rate, 2)?;
+    let mut sink = Speakers::new(sample_rate, 2)?;
     
     let mut raw = Vec::<Complex32>::new();
     let mut out = Vec::<i16>::new();
@@ -100,49 +99,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     drop(sink);
     
-    // let sample_rate: usize = 44100;
-    // let carrier_freq = 1350.0;
-    // let cutoff_hz = 1500f32.max(carrier_freq);
-    // 
-    // let mut mixer = MixerFilter::new(sample_rate, carrier_freq);
-    // let mut lpf = lowpass_complex(sample_rate, cutoff_hz, 101);
-    // 
-    // let file_dest = canonical_path(argv[1].clone());
-    // 
-    // let mut source = AlsaSource::default_source(sample_rate)?;
-    // let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
-    // 
-    // let mut total = 0;
-    // let mut buff_raw_samples = Vec::<i16>::new();
-    // let mut buff_real_samples = Vec::<f32>::new();
-    // let mut bank = BufferBank::<Complex32>::default();
-    // 
-    // let start = Instant::now();
-    // loop {
-    //     if start.elapsed().as_secs_f32() > 5.0 {
-    //         break;
-    //     }
-    //     if let Ok(read) = source.read(&mut buff_raw_samples) {
-    //         cast_all(|v| v as f32, buff_raw_samples.as_slice(), &mut buff_real_samples);
-    //         
-    //         let (_, dst) = bank.swap();
-    //         mixer.filter(buff_real_samples.as_slice(), dst)?;
-    //         
-    //         let (src, dst) = bank.swap();
-    //         lpf.filter(src.as_slice(), dst)?;
-    //         
-    //         // do something with the IQ samples
-    //         
-    //         
-    //         // write the IQ samples back out
-    //         let (src, _) = bank.swap();
-    //         mixer.filter(src.as_slice(), &mut buff_real_samples)?;
-    //         total += buff_real_samples.len();
-    //         sink.write(buff_real_samples.as_slice())?;
-    //     }
-    // }
-    // println!("Total: {}", total);
-
     Ok(())
 }
 

@@ -4,8 +4,6 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Seek, Write};
 use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
-use alsa::PCM;
-use alsa::pcm::{Access, Format, HwParams};
 use cpal::{BufferSize, Stream, StreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavReader, WavSpec, WavWriter};
@@ -155,94 +153,6 @@ impl<D: Write + Seek> Sink<Complex32> for WavSink<D> {
             self.writer.write_sample(sample.re as i16)?;
             self.writer.write_sample(sample.im as i16)?;
         }
-        Ok(())
-    }
-}
-
-
-pub struct AlsaSource {
-    pcm: PCM,
-    samples_per_buffer: usize,
-}
-
-impl AlsaSource {
-    pub fn new(sample_rate: usize, samples_per_buffer: usize, device: &str) -> Result<Self, Box<dyn Error>> {
-        let it = Self {
-            pcm: PCM::new(device, alsa::Direction::Capture, false)?,
-            samples_per_buffer,
-        };
-
-        let hwp = HwParams::any(&it.pcm)?;
-
-        let channels = 1;
-        let format = Format::s16();
-
-        hwp.set_channels(channels)?;
-        hwp.set_rate(sample_rate as u32, alsa::ValueOr::Nearest)?;
-        hwp.set_format(format)?;
-        hwp.set_access(Access::RWInterleaved)?;
-        it.pcm.hw_params(&hwp)?;
-        drop(hwp);
-
-        Ok(it)
-    }
-
-    pub fn default_source(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
-        Self::new(sample_rate, 1024, "default")
-    }
-}
-
-
-impl Source<i16> for AlsaSource {
-    fn read(&mut self, dst: &mut Vec<i16>) -> Result<(), Box<dyn Error>> {
-        if dst.len() != self.samples_per_buffer {
-            dst.resize(self.samples_per_buffer, 0);
-        }
-        self.pcm.io_i16()?.readi(dst)?;
-        Ok(())
-    }
-}
-
-
-pub struct AlsaSink {
-    pcm: PCM,
-}
-
-
-impl Drop for AlsaSink {
-    fn drop(&mut self) {
-        self.pcm.drain().unwrap();
-    }
-}
-
-
-impl AlsaSink {
-    pub fn new(sample_rate: usize, channels: u32, device: &str) -> Result<Self, Box<dyn Error>> {
-        let pcm = PCM::new(device, alsa::Direction::Playback, false)?;
-
-        let hwp = HwParams::any(&pcm)?;
-        let format = Format::s16();
-
-        hwp.set_channels(channels)?;
-        hwp.set_rate(sample_rate as u32, alsa::ValueOr::Nearest)?;
-        hwp.set_format(format)?;
-        hwp.set_access(Access::RWInterleaved)?;
-        pcm.hw_params(&hwp)?;
-        drop(hwp);
-
-        Ok(Self {
-            pcm,
-        })
-    }
-
-    pub fn default_sink(sample_rate: usize, channels: u32) -> Result<Self, Box<dyn Error>> {
-        Self::new(sample_rate, channels,"default")
-    }
-}
-
-impl Sink<i16> for AlsaSink {
-    fn write(&mut self, src: &[i16]) -> Result<(), Box<dyn Error>> {
-        self.pcm.io_i16()?.writei(src)?;
         Ok(())
     }
 }
@@ -525,15 +435,15 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Instant;
     use crate::traits::{Sink, Source};
-    use crate::block::{cast_all, AlsaSource, WavSink};
+    use crate::block::{cast_all, Microphone, WavSink};
 
     #[test]
     fn test_microphone() -> Result<(), Box<dyn std::error::Error>> {
         let sample_rate: usize = 44100;
 
-        let file_dest = PathBuf::from("/tmp/alsa.wav");
+        let file_dest = PathBuf::from("/tmp/cpal.wav");
 
-        let mut source = AlsaSource::default_source(sample_rate)?;
+        let mut source = Microphone::new(sample_rate)?;
         let mut sink = WavSink::new_file(sample_rate, 1, file_dest)?;
 
         let mut total = 0;
