@@ -360,6 +360,10 @@ impl Sink<i16> for CpalSink {
 }
 
 
+pub type Microphone = CpalSource;
+pub type Speakers = CpalSink;
+
+
 pub struct MixerFilter {
     phase: f32,
     omega: f32,
