@@ -6,9 +6,12 @@ use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
 use alsa::PCM;
 use alsa::pcm::{Access, Format, HwParams};
+use cpal::{BufferSize, Stream, StreamConfig};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavReader, WavSpec, WavWriter};
 use num_complex::Complex32;
 use num_traits::Zero;
+use crate::streambuf::{new_stream, StreamReader, StreamWriter};
 use crate::traits::*;
 
 
@@ -183,7 +186,7 @@ impl AlsaSource {
 
         Ok(it)
     }
-    
+
     pub fn default_source(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
         Self::new(sample_rate, 1024, "default")
     }
@@ -244,6 +247,117 @@ impl Sink<i16> for AlsaSink {
     }
 }
 
+
+pub struct CpalSource {
+    audio_stream: Stream,
+    config: StreamConfig,
+    reader: StreamReader<i16>,
+}
+
+impl CpalSource {
+    pub fn new(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
+        let host = cpal::default_host();
+        let device = host.default_input_device().ok_or("unable to open default input audio device")?;
+
+        let config = StreamConfig {
+            channels: 1,
+            sample_rate: cpal::SampleRate(sample_rate as u32),
+            buffer_size: BufferSize::Default,
+        };
+
+        let (reader, writer) = new_stream::<i16>(sample_rate, true, false, true)?;
+
+
+        let stream = device.build_input_stream(&config, move |data: &[i16], _: &cpal::InputCallbackInfo| {
+            writer.put(data).unwrap();
+        },
+                                               move |error: cpal::StreamError| {
+                                                   panic!("{}", error);
+                                               },
+                                               None
+        )?;
+
+        let src = Self {
+            audio_stream: stream,
+            config,
+            reader,
+        };
+
+        src.audio_stream.play()?;
+
+        Ok(src)
+    }
+}
+
+
+impl Source<i16> for CpalSource {
+    fn read(&mut self, dst: &mut Vec<i16>) -> Result<(), Box<dyn Error>> {
+        let sample_rate = self.config.sample_rate.0 as usize;
+        if dst.capacity() < sample_rate {
+            dst.reserve(sample_rate - dst.capacity());
+        }
+        if dst.len() < sample_rate {
+            unsafe { dst.set_len(dst.capacity()); }
+        }
+        
+        let read = self.reader.get(dst.as_mut_slice())?;
+        unsafe { dst.set_len(read); }
+        Ok(())
+    }
+}
+
+
+pub struct CpalSink {
+    audio_stream: Stream,
+    config: StreamConfig,
+    writer: StreamWriter<i16>,
+}
+
+impl CpalSink {
+    pub fn new(sample_rate: usize, channels: u16) -> Result<Self, Box<dyn Error>> {
+        let host = cpal::default_host();
+        let device = host.default_output_device().ok_or("unable to open default output audio device")?;
+
+        let config = StreamConfig {
+            channels,
+            sample_rate: cpal::SampleRate(sample_rate as u32),
+            buffer_size: BufferSize::Default,
+        };
+
+        let (reader, writer) = new_stream::<i16>(sample_rate, false, true, false)?;
+
+
+        let stream = device.build_output_stream(&config, move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+            reader.get(data).unwrap();
+        },
+                                                move |error: cpal::StreamError| {
+                                                    panic!("{}", error);
+                                                },
+                                                None
+        )?;
+
+        let dst = Self {
+            audio_stream: stream,
+            config,
+            writer,
+        };
+
+        dst.audio_stream.play()?;
+
+        Ok(dst)
+    }
+}
+
+
+impl Sink<i16> for CpalSink {
+    fn write(&mut self, src: &[i16]) -> Result<(), Box<dyn Error>> {
+        let mut off = 0;
+        while off < src.len() {
+            off += self.writer.put(&src[off..])?;
+        }
+        Ok(())
+    }
+}
 
 
 pub struct MixerFilter {
