@@ -11,7 +11,7 @@ use num_complex::Complex32;
 use num_traits::Zero;
 use crate::streambuf::{new_stream, StreamReader, StreamWriter};
 use crate::traits::*;
-
+use crate::util::resize_unchecked;
 
 #[derive(Default)]
 pub struct BufferBank<T> {
@@ -213,15 +213,10 @@ impl CpalSource {
 impl Source<f32> for CpalSource {
     fn read(&mut self, dst: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
         let sample_rate = self.config.sample_rate.0 as usize;
-        if dst.capacity() < sample_rate {
-            dst.reserve(sample_rate - dst.capacity());
-        }
-        if dst.len() < sample_rate {
-            unsafe { dst.set_len(dst.capacity()); }
-        }
+        unsafe { resize_unchecked(dst, sample_rate); }
 
         let read = self.reader.get(dst.as_mut_slice())?;
-        unsafe { dst.set_len(read); }
+        unsafe { resize_unchecked(dst, read); }
         Ok(())
     }
 }

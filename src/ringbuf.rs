@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use crate::util::resize_unchecked;
 
 pub struct RingBuf<T: Copy> {
     mem: Vec<T>,
@@ -12,15 +13,13 @@ pub struct RingBuf<T: Copy> {
 impl<T: Copy> RingBuf<T> {
     pub fn new(capacity: usize, overwrite: bool) -> Self {
         let mut it = Self {
-            mem: Vec::with_capacity(capacity),
+            mem: Vec::new(),
             rp: 0,
             wp: 0,
             size: 0,
             overwrite,
         };
-        unsafe {
-            it.mem.set_len(it.mem.capacity());
-        }
+        unsafe { resize_unchecked(&mut it.mem, capacity); }
         it
     }
 
@@ -82,7 +81,7 @@ impl<T: Copy> RingBuf<T> {
 #[cfg(test)]
 mod tests {
     use crate::ringbuf::RingBuf;
-
+    use crate::util::resize_unchecked;
 
     #[test]
     fn test_ringbuf_overwrite() -> std::io::Result<()> {
@@ -147,10 +146,7 @@ mod tests {
         while off < expected.len() {
             let w = ring.put(&expected[off..]);
             let end = off + w;
-            if actual.capacity() < end {
-                actual.reserve(end - actual.capacity());
-            }
-            unsafe { actual.set_len(end); }
+            unsafe { resize_unchecked(&mut actual, end); }
             
             let r = ring.get(&mut actual.as_mut_slice()[off..end]);
             assert_eq!(w, r);

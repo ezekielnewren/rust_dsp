@@ -30,3 +30,13 @@ impl SincArg for Complex32 {
         }
     }
 }
+
+
+pub unsafe fn resize_unchecked<T>(vec: &mut Vec<T>, new_length: usize) {
+    if vec.capacity() < new_length {
+        vec.reserve(new_length - vec.capacity());
+    }
+    if vec.len() != new_length {
+        vec.set_len(new_length);
+    }
+}
