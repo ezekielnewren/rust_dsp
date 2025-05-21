@@ -6,7 +6,7 @@ use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
 use cpal::{BufferSize, Stream, StreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use hound::{WavReader, WavSpec, WavWriter};
+use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use num_complex::Complex32;
 use num_traits::Zero;
 use crate::streambuf::{new_stream, StreamReader, StreamWriter};
@@ -37,6 +37,7 @@ impl<T> BufferBank<T> {
 pub struct WavSource<D: Read> {
     reader: WavReader<D>,
     samples_per_buffer: usize,
+    ratio: f32,
 }
 
 
@@ -45,10 +46,12 @@ impl WavSource<BufReader<File>> {
         let mut it = Self {
             reader: WavReader::open(path)?,
             samples_per_buffer,
+            ratio: 0f32,
         };
         if samples_per_buffer == 0 {
             it.samples_per_buffer = it.reader.spec().sample_rate as usize;
         }
+        it.ratio = ((1 << it.reader.spec().bits_per_sample) - 1) as f32;
         Ok(it)
     }
 
@@ -62,9 +65,9 @@ impl<D: Read> Source<f32> for WavSource<D> {
     fn read(&mut self, dst: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
         debug_assert!(self.reader.spec().channels == 1);
         dst.clear();
-        let it = self.reader.samples::<i16>();
+        let it = self.reader.samples::<i32>();
         for sample in it {
-            dst.push(sample? as f32);
+            dst.push(sample? as f32 / self.ratio);
             if dst.len() >= self.samples_per_buffer {
                 break;
             }
@@ -78,10 +81,10 @@ impl<D: Read> Source<Complex32> for WavSource<D> {
     fn read(&mut self, dst: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
         debug_assert!(self.reader.spec().channels == 2);
         dst.clear();
-        let mut it = self.reader.samples::<i16>();
+        let mut it = self.reader.samples::<i32>();
         while let Some(Ok(re)) = it.next() {
             if let Some(Ok(im)) = it.next() {
-                let c = Complex32::new(re as f32, im as f32);
+                let c = Complex32::new(re as f32 / self.ratio, im as f32 / self.ratio);
                 dst.push(c);
                 if dst.len() >= self.samples_per_buffer {
                     break;
@@ -97,6 +100,7 @@ impl<D: Read> Source<Complex32> for WavSource<D> {
 
 pub struct WavSink<D: Write + Seek> {
     writer: WavWriter<D>,
+    ratio: f32,
 }
 
 
@@ -113,11 +117,12 @@ impl<D: Write + Seek> WavSink<D> {
             channels,
             sample_rate: sample_rate as u32,
             bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
+            sample_format: SampleFormat::Int,
         };
 
         Ok(Self {
             writer: WavWriter::new(sink, spec)?,
+            ratio: i16::MAX as f32,
         })
     }
 }
@@ -129,11 +134,12 @@ impl WavSink<BufWriter<File>> {
             channels,
             sample_rate: sample_rate as u32,
             bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
+            sample_format: SampleFormat::Int,
         };
 
         Ok(WavSink {
             writer: WavWriter::create(path, spec)?,
+            ratio: i16::MAX as f32,
         })
     }
 }
@@ -143,7 +149,7 @@ impl<D: Write + Seek> Sink<f32> for WavSink<D> {
     fn write(&mut self, src: &[f32]) -> Result<(), Box<dyn Error>> {
         debug_assert!(self.writer.spec().channels == 1);
         for &sample in src {
-            self.writer.write_sample(sample as i16)?;
+            self.writer.write_sample((sample * self.ratio) as i32)?;
         }
         Ok(())
     }
@@ -154,8 +160,8 @@ impl<D: Write + Seek> Sink<Complex32> for WavSink<D> {
     fn write(&mut self, src: &[Complex32]) -> Result<(), Box<dyn Error>> {
         debug_assert!(self.writer.spec().channels == 2);
         for &sample in src {
-            self.writer.write_sample(sample.re as i16)?;
-            self.writer.write_sample(sample.im as i16)?;
+            self.writer.write_sample((sample.re * self.ratio) as i32)?;
+            self.writer.write_sample((sample.im * self.ratio) as i32)?;
         }
         Ok(())
     }
@@ -165,7 +171,7 @@ impl<D: Write + Seek> Sink<Complex32> for WavSink<D> {
 pub struct CpalSource {
     audio_stream: Stream,
     config: StreamConfig,
-    reader: StreamReader<i16>,
+    reader: StreamReader<f32>,
 }
 
 impl CpalSource {
@@ -179,10 +185,10 @@ impl CpalSource {
             buffer_size: BufferSize::Default,
         };
 
-        let (reader, writer) = new_stream::<i16>(sample_rate, true, false, true)?;
+        let (reader, writer) = new_stream::<f32>(sample_rate, true, false, true)?;
 
 
-        let stream = device.build_input_stream(&config, move |data: &[i16], _: &cpal::InputCallbackInfo| {
+        let stream = device.build_input_stream(&config, move |data: &[f32], _: &cpal::InputCallbackInfo| {
             writer.put(data).unwrap();
         },
                                                move |error: cpal::StreamError| {
@@ -204,8 +210,8 @@ impl CpalSource {
 }
 
 
-impl Source<i16> for CpalSource {
-    fn read(&mut self, dst: &mut Vec<i16>) -> Result<(), Box<dyn Error>> {
+impl Source<f32> for CpalSource {
+    fn read(&mut self, dst: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
         let sample_rate = self.config.sample_rate.0 as usize;
         if dst.capacity() < sample_rate {
             dst.reserve(sample_rate - dst.capacity());
@@ -224,7 +230,7 @@ impl Source<i16> for CpalSource {
 pub struct CpalSink {
     audio_stream: Stream,
     config: StreamConfig,
-    writer: StreamWriter<i16>,
+    writer: StreamWriter<f32>,
 }
 
 impl CpalSink {
@@ -238,21 +244,21 @@ impl CpalSink {
             buffer_size: BufferSize::Default,
         };
 
-        let (reader, writer) = new_stream::<i16>(sample_rate, false, true, false)?;
+        let (reader, writer) = new_stream::<f32>(sample_rate, false, true, false)?;
 
 
-        let stream = device.build_output_stream(&config, move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+        let stream = device.build_output_stream(&config, move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             let result = reader.get(data);
             match result {
                 Ok(0) => {
-                    data.fill(0);
+                    data.fill(0f32);
                 },
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                    data.fill(0);
+                    data.fill(0f32);
                 },
                 Ok(read) => {
                     if read < data.len() {
-                        data[read..].fill(0);
+                        data[read..].fill(0f32);
                     }
                 },
                 Err(e) => {
@@ -279,8 +285,8 @@ impl CpalSink {
 }
 
 
-impl Sink<i16> for CpalSink {
-    fn write(&mut self, src: &[i16]) -> Result<(), Box<dyn Error>> {
+impl Sink<f32> for CpalSink {
+    fn write(&mut self, src: &[f32]) -> Result<(), Box<dyn Error>> {
         let mut off = 0;
         while off < src.len() {
             off += self.writer.put(&src[off..])?;

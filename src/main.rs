@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sink = Speakers::new(sample_rate, 2)?;
     
     let mut raw = Vec::<Complex32>::new();
-    let mut out = Vec::<i16>::new();
+    let mut out = Vec::<f32>::new();
     
     while let Ok(()) = source.read(&mut raw) {
         if raw.len() == 0 {
@@ -93,8 +93,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         out.clear();
         for v in raw.iter().copied() {
-            out.push(v.re as i16);
-            out.push(v.im as i16);
+            out.push(v.re);
+            out.push(v.im);
         }
         sink.write(out.as_slice())?;
     }
