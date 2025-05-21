@@ -1,10 +1,13 @@
 use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Condvar, Mutex};
-use crate::ringbuf::RingBuf;
-
+use crate::util::resize_unchecked;
 
 struct StreamBuf<T: Copy> {
-    ring: RingBuf<T>,
+    mem: Vec<T>,
+    rp: usize,
+    wp: usize,
+    size: usize,
+    overwrite: bool,
     block_read: bool,
     block_write: bool,
     read_closed: bool,
@@ -30,14 +33,20 @@ pub fn new_stream<T: Copy>(capacity: usize, overwrite: bool, block_write: bool, 
         return Err(std::io::Error::new(ErrorKind::InvalidInput, "overwrite and block_write are mutually exclusive"));
     }
 
-    let stream = Arc::new(Mutex::new(StreamBuf {
-        ring: RingBuf::new(capacity, overwrite),
+    let mut stream = StreamBuf {
+        mem: Vec::new(),
+        rp: 0,
+        wp: 0,
+        size: 0,
+        overwrite,
         block_read,
         block_write,
         read_closed: false,
         write_closed: false,
-    }));
-
+    };
+    unsafe { resize_unchecked(&mut stream.mem, capacity); }
+    let stream = Arc::new(Mutex::new(stream));
+    
     let condvar = Arc::new(Condvar::default());
 
     let read = StreamReader {
@@ -55,28 +64,38 @@ pub fn new_stream<T: Copy>(capacity: usize, overwrite: bool, block_write: bool, 
 
 
 impl<T: Copy> StreamReader<T> {
-    pub fn get(&self, buf: &mut [T]) -> std::io::Result<usize> {
-        if buf.len() == 0 {
+    pub fn get(&self, buffer: &mut [T]) -> std::io::Result<usize> {
+        if buffer.len() == 0 {
             return Err(std::io::Error::new(ErrorKind::InvalidInput, "buffer is zero length"));
         }
 
+        
         let mut inner = self.reader.lock().unwrap();
+        let len = buffer.len();
+        let buf = &mut buffer[0..std::cmp::min(len, inner.size)];
         if inner.block_read {
-            while inner.ring.len() == 0 {
+            while inner.size == 0 {
                 if inner.write_closed {
                     return Ok(0);
                 }
                 inner = self.condvar.wait(inner).unwrap();
             }
-        } else if inner.ring.len() == 0 {
+        } else if inner.size == 0 {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer empty"));
         }
 
-        let read = inner.ring.get(buf);
-        if read > 0 {
+        let mut off = 0;
+        while off < buf.len() {
+            let read = std::cmp::min(buf.len() - off, inner.mem.capacity() - inner.rp);
+            buf[off..off + read].copy_from_slice(&inner.mem.as_slice()[inner.rp..inner.rp + read]);
+            inner.rp = (inner.rp + read) % inner.mem.capacity();
+            inner.size -= read;
+            off += read;
+        }
+        if off > 0 {
             self.condvar.notify_all();
         }
-        Ok(read)
+        Ok(off)
     }
 }
 
@@ -98,38 +117,56 @@ impl Read for StreamReader<u8> {
 
 
 impl<T: Copy> StreamWriter<T> {
-    pub fn put(&self, buf: &[T]) -> std::io::Result<usize> {
-        if buf.len() == 0 {
+    pub fn put(&self, buffer: &[T]) -> std::io::Result<usize> {
+        if buffer.len() == 0 {
             return Err(std::io::Error::new(ErrorKind::InvalidInput, "buffer is zero length"));
         }
 
         let mut inner = self.writer.lock().unwrap();
+        let buf = if !inner.overwrite {
+            &buffer[..std::cmp::min(buffer.len(), inner.mem.capacity() - inner.size)]
+        } else {
+            buffer
+        };
         if inner.write_closed {
             return Err(std::io::Error::new(ErrorKind::Other, "output is closed"));
         }
 
         if inner.block_write {
-            while inner.ring.len() == inner.ring.capacity() {
+            while inner.size == inner.mem.capacity() {
                 inner = self.condvar.wait(inner).unwrap();
             }
-        } else if !inner.ring.overwrite && inner.ring.len() == inner.ring.capacity() {
+        } else if !inner.overwrite && inner.size == inner.mem.capacity() {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer full"));
         }
 
-        let write = inner.ring.put(buf);
-        if write > 0 {
+        let mut off = 0;
+        while off < buf.len() {
+            let write = std::cmp::min(buf.len() - off, inner.mem.capacity() - inner.wp);
+            let wp = inner.wp;
+            inner.mem.as_mut_slice()[wp..wp + write].copy_from_slice(&buf[off..off + write]);
+            off += write;
+            inner.wp = (inner.wp + write) % inner.mem.capacity();
+            inner.size += write;
+            if inner.size > inner.mem.capacity() {
+                debug_assert!(inner.overwrite);
+                inner.rp = (inner.rp + (inner.size - inner.mem.capacity())) % inner.mem.capacity();
+                inner.size = inner.mem.capacity();
+            }
+        }
+        if off > 0 {
             self.condvar.notify_all();
         }
-        Ok(write)
+        Ok(off)
     }
     
     pub fn drain(&mut self) -> std::io::Result<()> {
         let mut inner = self.writer.lock().unwrap();
         if inner.block_write {
-            while inner.ring.len() > 0 {
+            while inner.size > 0 {
                 inner = self.condvar.wait(inner).unwrap();
             }
-        } else if inner.ring.len() > 0 {
+        } else if inner.size > 0 {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer is not empty yet"));
         }
 

@@ -9,7 +9,6 @@ use crate::block::*;
 
 pub mod traits;
 pub mod block;
-pub mod ringbuf;
 pub mod streambuf;
 pub mod util;
 
