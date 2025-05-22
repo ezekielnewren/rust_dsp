@@ -64,6 +64,11 @@ pub fn new_stream<'a, T: Copy>(capacity: usize, overwrite: bool, block_write: bo
 }
 
 
+pub fn new_stream_default<'a, T: Copy>() -> std::io::Result<(StreamReader<T>, StreamWriter<T>)> {
+    new_stream(8192, false, true, true)
+}
+
+
 pub struct PeekIter<'a, T: Copy> {
     stream: Option<MutexGuard<'a, StreamBuf<T>>>,
     condvar: Arc<Condvar>,
