@@ -66,6 +66,7 @@ pub fn new_stream<'a, T: Copy>(capacity: usize, overwrite: bool, block_write: bo
 
 pub struct PeekIter<'a, T: Copy> {
     stream: Option<MutexGuard<'a, StreamBuf<T>>>,
+    condvar: Arc<Condvar>,
     off: usize,
     consume: usize,
 }
@@ -91,9 +92,10 @@ impl<'a, T: Copy> Iterator for PeekIter<'a, T> {
 
 impl<'a, T: Copy> PeekIter<'a, T> {
 
-    fn new(mutex: &'a Mutex<StreamBuf<T>>) -> Self {
+    fn new(mutex: &'a Mutex<StreamBuf<T>>, condvar: Arc<Condvar>) -> Self {
         Self {
             stream: Some(mutex.lock().unwrap()),
+            condvar,
             off: 0,
             consume: 0,
         }
@@ -122,6 +124,7 @@ impl<'a, T: Copy> Drop for PeekIter<'a, T> {
             stream.rp = (stream.rp + self.consume) % stream.mem.capacity();
             stream.size -= self.consume;
         }
+        self.condvar.notify_all();
     }
 }
 
@@ -162,7 +165,7 @@ impl<T: Copy> StreamReader<T> {
     }
     
     pub fn peek(&mut self) -> std::io::Result<PeekIter<T>> {
-        let mut it = PeekIter::new(self.reader.deref());
+        let mut it = PeekIter::new(self.reader.deref(), Arc::clone(&self.condvar));
         if it.stream.as_ref().unwrap().block_read {
             while it.stream.as_ref().unwrap().size == 0 {
                 it.stream = Some(self.condvar.wait(it.stream.take().unwrap()).unwrap());
@@ -170,7 +173,7 @@ impl<T: Copy> StreamReader<T> {
         } else {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer is empty"));
         }
-        
+
         Ok(it)
     }
     
