@@ -452,12 +452,12 @@ impl<T: Arithmetic> Filter<T, T> for FIRFilter<T> {
 
             let mut acc = T::zero();
             for i in 0..self.taps.len() {
-                let slot = (self.index + self.taps.len() - i) % self.taps.len();
+                let slot = (self.index + 1 + i) % self.history.len();
                 acc += self.taps[i] * self.history[slot];
             }
             output.push(acc);
 
-            self.index = (self.index + 1) % self.taps.len();
+            self.index = (self.index + 1) % self.history.len();
         }
 
         Ok(())
