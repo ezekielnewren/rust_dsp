@@ -440,6 +440,10 @@ impl<T: Arithmetic> FIRFilter<T> {
             index: 0,
         }
     }
+    
+    pub fn taps(&self) -> &[T] {
+        self.taps.as_slice()
+    }
 }
 
 
@@ -463,40 +467,6 @@ impl<T: Arithmetic> Filter<T, T> for FIRFilter<T> {
         Ok(())
     }
 }
-
-
-pub fn lowpass_real(sample_rate: usize, cutoff_hz: f32, num_taps: usize) -> FIRFilter<f32> {
-    let fc = cutoff_hz / sample_rate as f32;
-    let m = num_taps as isize - 1;
-
-    let mut taps: Vec<f32> = Vec::with_capacity(num_taps);
-
-    for n in 0..num_taps {
-        let n = n as isize;
-        let centered = n - m / 2;
-
-        let sinc = if centered == 0 {
-            2.0 * fc
-        } else {
-            (2.0 * PI *fc * centered as f32).sin() / (PI * centered as f32)
-        };
-
-
-        // Apply a Hamming window
-        let window = 0.54 - 0.46 * ((2.0 * PI * n as f32) / m as f32 ).cos();
-        taps.push(sinc * window);
-    }
-
-    FIRFilter::new(taps)
-}
-
-
-pub fn lowpass_complex(sample_rate: usize, cutoff_hz: f32, num_taps: usize) -> FIRFilter<Complex32> {
-    let tmp = lowpass_real(sample_rate, cutoff_hz, num_taps);
-    FIRFilter::new(tmp.taps.into_iter().map(|real| Complex32::from(real)).collect())
-}
-
-
 
 
 #[cfg(test)]

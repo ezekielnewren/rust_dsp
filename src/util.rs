@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 use num_complex::Complex32;
-
+use crate::block::FIRFilter;
 
 #[derive(Default)]
 pub struct BufferBank<T> {
@@ -61,4 +61,27 @@ pub unsafe fn resize_unchecked<T>(vec: &mut Vec<T>, new_length: usize) {
     if vec.len() != new_length {
         vec.set_len(new_length);
     }
+}
+
+pub fn lowpass_real(sample_rate: u32, cutoff_hz: f32, num_taps: usize) -> FIRFilter<f32> {
+    let fc = cutoff_hz / sample_rate as f32;
+    let m = num_taps as isize - 1;
+    
+    let mut taps = Vec::new();
+    
+    for n in 0..num_taps as isize {
+        let centered = n - m / 2;
+        let sinc_val = (2.0 * fc * centered as f32).sinc();
+        
+        let window = 0.54 - 0.46 * ((2.0 * PI * n as f32) / m as f32).cos();
+        taps.push(sinc_val * window);
+    }
+    
+    FIRFilter::new(taps)
+}
+
+pub fn lowpass_complex(sample_rate: u32, cutoff_hz: f32, num_taps: usize) -> FIRFilter<Complex32> {
+    let tmp = lowpass_real(sample_rate, cutoff_hz, num_taps);
+    let complex_taps = tmp.taps().iter().copied().map(|r| Complex32::new(r, 0.0)).collect();
+    FIRFilter::new(complex_taps)
 }
