@@ -135,10 +135,7 @@ impl<T: Copy> StreamReader<T> {
             return Err(std::io::Error::new(ErrorKind::InvalidInput, "buffer is zero length"));
         }
 
-
         let mut inner = self.reader.lock().unwrap();
-        let len = buffer.len();
-        let buf = &mut buffer[0..std::cmp::min(len, inner.size)];
         if inner.block_read {
             while inner.size == 0 {
                 if inner.write_closed {
@@ -150,6 +147,8 @@ impl<T: Copy> StreamReader<T> {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer empty"));
         }
 
+        let len = buffer.len();
+        let buf = &mut buffer[0..std::cmp::min(len, inner.size)];
         let mut off = 0;
         while off < buf.len() {
             let read = std::cmp::min(buf.len() - off, inner.mem.capacity() - inner.rp);
