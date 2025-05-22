@@ -111,7 +111,7 @@ impl<D: Write + Seek> WavSink<D> {
 
 
 impl WavSink<BufWriter<File>> {
-    pub fn new_file(sample_rate: usize, channels: u16, path: PathBuf) -> Result<WavSink<BufWriter<File>>, Box<dyn Error>> {
+    pub fn new_file(sample_rate: u32, channels: u16, path: PathBuf) -> Result<WavSink<BufWriter<File>>, Box<dyn Error>> {
         let spec = WavSpec {
             channels,
             sample_rate: sample_rate as u32,
@@ -157,7 +157,7 @@ pub struct CpalSource {
 }
 
 impl CpalSource {
-    pub fn new(sample_rate: usize) -> Result<Self, Box<dyn Error>> {
+    pub fn new(sample_rate: u32) -> Result<Self, Box<dyn Error>> {
         let host = cpal::default_host();
         let device = host.default_input_device().ok_or("unable to open default input audio device")?;
 
@@ -167,7 +167,7 @@ impl CpalSource {
             buffer_size: BufferSize::Default,
         };
 
-        let (reader, writer) = new_stream::<f32>(sample_rate, true, false, true)?;
+        let (reader, writer) = new_stream::<f32>(sample_rate as usize, true, false, true)?;
 
 
         let stream = device.build_input_stream(&config, move |data: &[f32], _: &cpal::InputCallbackInfo| {
@@ -300,11 +300,9 @@ impl Drop for HackRFSource {
 
 
 fn hackrf_rx_callback(_: &HackRf, samples: &[Complex<i8>], user: &dyn Any) {
-    print!("hackrf_rx_callback...");
     if let Some(writer) = user.downcast_ref::<StreamWriter<Complex<i8>>>() {
         writer.put(samples).unwrap();
     }
-    println!("done");
 }
 
 
@@ -361,7 +359,7 @@ pub struct MixerFilter {
 
 
 impl MixerFilter {
-    pub fn new(sample_rate: usize, freq_shift: f32) -> Self {
+    pub fn new(sample_rate: u32, freq_shift: f32) -> Self {
         Self {
             phase: 0.0,
             omega: 2.0 * PI * freq_shift / sample_rate as f32,
@@ -510,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_microphone() -> Result<(), Box<dyn std::error::Error>> {
-        let sample_rate: usize = 44100;
+        let sample_rate: u32 = 44100;
 
         let file_dest = PathBuf::from("/tmp/cpal.wav");
 
