@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::error::Error;
 use std::f32::consts::PI;
 use std::fs::File;
@@ -7,7 +8,8 @@ use std::path::PathBuf;
 use cpal::{BufferSize, Stream, StreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
-use num_complex::Complex32;
+use libhackrf::HackRf;
+use num_complex::{Complex, Complex32};
 use num_traits::Zero;
 use crate::streambuf::{new_stream, StreamReader, StreamWriter};
 use crate::traits::*;
@@ -301,6 +303,75 @@ impl Drop for CpalSink {
 
 pub type Microphone = CpalSource;
 pub type Speakers = CpalSink;
+
+
+pub struct HackRFSource {
+    device: HackRf,
+    reader: StreamReader<Complex<i8>>,
+    samples_per_frame: usize,
+}
+
+
+impl Drop for HackRFSource {
+    fn drop(&mut self) {
+        self.device.stop_rx().unwrap();
+    }
+}
+
+
+fn hackrf_rx_callback(_: &HackRf, samples: &[Complex<i8>], user: &dyn Any) {
+    print!("hackrf_rx_callback...");
+    if let Some(writer) = user.downcast_ref::<StreamWriter<Complex<i8>>>() {
+        writer.put(samples).unwrap();
+    }
+    println!("done");
+}
+
+
+impl HackRFSource {
+    pub fn new(device: HackRf, samples_per_frame: usize) -> Result<Self, Box<dyn Error>> {
+        if samples_per_frame & 1 != 0 {
+            panic!("buffer size must be a multiple of 2");
+        }
+
+        let (reader, writer) = new_stream(samples_per_frame, true, false, true)?;
+        let it = Self {
+            device,
+            reader,
+            samples_per_frame,
+        };
+
+        it.device.start_rx(hackrf_rx_callback, writer)?;
+
+        Ok(it)
+    }
+}
+
+
+impl Source<Complex32> for HackRFSource {
+    fn read(&mut self, dst: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
+        dst.clear();
+        let mut off = 0;
+        let mut it = self.reader.peek()?;
+        let read = std::cmp::min(self.samples_per_frame, it.len());
+        while let Some(chunk) = it.next() {
+            let rem = std::cmp::min(read - off, chunk.len());
+            if rem == 0 {
+                break;
+            }
+            for sample in &chunk[..rem] {
+                dst.push(Complex32 {
+                    re: sample.re as f32 / i8::MAX as f32,
+                    im: sample.im as f32 / i8::MAX as f32,
+                });
+            }
+            off += rem;
+        };
+        it.consume(off);
+
+        Ok(())
+    }
+}
 
 
 pub struct MixerFilter {
