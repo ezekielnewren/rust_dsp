@@ -202,23 +202,23 @@ impl<T: Copy> StreamWriter<T> {
         }
 
         let mut inner = self.writer.lock().unwrap();
-        let buf = if !inner.overwrite {
-            &buffer[..std::cmp::min(buffer.len(), inner.mem.capacity() - inner.size)]
-        } else {
-            buffer
-        };
-        if inner.write_closed {
-            return Err(std::io::Error::new(ErrorKind::Other, "output is closed"));
-        }
-
         if inner.block_write {
             while inner.size == inner.mem.capacity() {
+                if inner.write_closed {
+                    return Err(std::io::Error::new(ErrorKind::Other, "output is closed"));
+                }
                 inner = self.condvar.wait(inner).unwrap();
             }
         } else if !inner.overwrite && inner.size == inner.mem.capacity() {
             return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer full"));
         }
 
+        let buf = if !inner.overwrite {
+            &buffer[..std::cmp::min(buffer.len(), inner.mem.capacity() - inner.size)]
+        } else {
+            buffer
+        };
+        
         let mut off = 0;
         while off < buf.len() {
             let write = std::cmp::min(buf.len() - off, inner.mem.capacity() - inner.wp);
