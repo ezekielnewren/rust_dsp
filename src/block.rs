@@ -381,10 +381,10 @@ pub struct MixerFilter {
 
 
 impl MixerFilter {
-    pub fn new(sample_rate: usize, freq: f32) -> Self {
+    pub fn new(sample_rate: usize, freq_shift: f32) -> Self {
         Self {
             phase: 0.0,
-            omega: 2.0 * PI * freq / sample_rate as f32,
+            omega: 2.0 * PI * freq_shift / sample_rate as f32,
         }
     }
 }
@@ -414,6 +414,21 @@ impl Filter<Complex32, f32> for MixerFilter {
             self.phase = (self.phase + self.omega).rem_euclid(2.0 * PI);
         }
 
+        Ok(())
+    }
+}
+
+
+impl Filter<Complex32, Complex32> for MixerFilter {
+    fn filter(&mut self, input: &[Complex32], output: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
+        output.clear();
+        for sample in input.iter() {
+            let (sin, cos) = self.phase.sin_cos();
+            let lo = Complex32 { re: cos, im: sin };
+            output.push(sample * lo);
+            self.phase = (self.phase + self.omega).rem_euclid(2.0 * PI);
+        }
+        
         Ok(())
     }
 }
