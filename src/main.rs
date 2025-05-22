@@ -3,6 +3,8 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::time::Instant;
 use bitvec::prelude::*;
+use libhackrf::ffi::HackrfDevice;
+use libhackrf::HackRf;
 use num_complex::Complex32;
 use crate::traits::{Filter, Sink, Source};
 use crate::block::*;
@@ -79,25 +81,46 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let file_src = canonical_path(argv[1].clone());
     
-    let mut source = WavSource::new(file_src, 0)?;
-    let sample_rate = source.spec().sample_rate as usize;
-    let mut sink = Speakers::new(sample_rate, 2)?;
+    // let mut source = WavSource::new(file_src, 0)?;
+    // let sample_rate = source.spec().sample_rate as usize;
+    // let mut sink = Speakers::new(sample_rate, 2)?;
+    
+    let device = HackRf::open()?;
+    
+    let tune_freq = 95.5e6 as u64;
+    let tune_off = 200e3f32 as u64;
+    let tune_hardware = tune_freq - tune_off;
+    
+    let sample_rate = 2_000_000;
+    
+    device.set_sample_rate(sample_rate)?;
+    device.set_freq(tune_hardware)?;
+    device.set_amp_enable(false)?;
+    
+    let mut source = HackRFSource::new(device, sample_rate as usize)?;
+    
     
     let mut raw = Vec::<Complex32>::new();
-    let mut out = Vec::<f32>::new();
     
+    let mut total: u64 = 0;
+    
+    let start = Instant::now();
     while let Ok(()) = source.read(&mut raw) {
-        if raw.len() == 0 {
+        if raw.len() == 0 || start.elapsed().as_secs_f32() > 3.0 {
             break;
         }
-        out.clear();
-        for v in raw.iter().copied() {
-            out.push(v.re);
-            out.push(v.im);
-        }
-        sink.write(out.as_slice())?;
+        total += raw.len() as u64;
+        println!("samples: {} {}", raw.len(), total);
+        // out.clear();
+        // for v in raw.iter().copied() {
+        //     out.push(v.re);
+        //     out.push(v.im);
+        // }
+        // sink.write(out.as_slice())?;
     }
-    drop(sink);
+    // drop(sink);
+    
+    println!("samples captured: {}", total);
     
     Ok(())
 }
