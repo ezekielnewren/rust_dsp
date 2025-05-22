@@ -1,6 +1,5 @@
 use std::io::{ErrorKind, Read, Write};
-use std::marker::PhantomData;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use crate::util::resize_unchecked;
 
@@ -66,7 +65,7 @@ pub fn new_stream<'a, T: Copy>(capacity: usize, overwrite: bool, block_write: bo
 
 
 pub struct PeekIter<'a, T: Copy> {
-    stream: MutexGuard<'a, StreamBuf<T>>,
+    stream: Option<MutexGuard<'a, StreamBuf<T>>>,
     off: usize,
     consume: usize,
 }
@@ -76,13 +75,14 @@ impl<'a, T: Copy> Iterator for PeekIter<'a, T> {
     type Item = &'a [T];
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.off == self.stream.size {
+        let stream = self.stream.as_deref_mut().unwrap();
+        if self.off == stream.size {
             return None;
         }
 
-        let rp = (self.stream.rp + self.off) % self.stream.mem.capacity();
-        let read = std::cmp::min(self.stream.mem.capacity() - rp, self.stream.size);
-        let ptr = &self.stream.mem[rp] as *const T;
+        let rp = (stream.rp + self.off) % stream.mem.capacity();
+        let read = std::cmp::min(stream.mem.capacity() - rp, stream.size);
+        let ptr = &stream.mem[rp] as *const T;
         self.off += read;
         Some(unsafe { std::slice::from_raw_parts(ptr, read) })
     }
@@ -93,7 +93,7 @@ impl<'a, T: Copy> PeekIter<'a, T> {
 
     fn new(mutex: &'a Mutex<StreamBuf<T>>) -> Self {
         Self {
-            stream: mutex.lock().unwrap(),
+            stream: Some(mutex.lock().unwrap()),
             off: 0,
             consume: 0,
         }
@@ -101,23 +101,26 @@ impl<'a, T: Copy> PeekIter<'a, T> {
     
     /// Set the total number of items to be marked as consumed when this Iterator is dropped.
     pub fn consume(&mut self, consume: usize) {
-        if self.consume > self.stream.size {
+        let stream = self.stream.as_deref_mut().unwrap();
+        if self.consume > stream.size {
             panic!("consume > len");
         }
         self.consume = consume;
     }
     
     pub fn len(&self) -> usize {
-        self.stream.size
+        let stream = self.stream.as_deref().unwrap();
+        stream.size
     }
 }
 
 
 impl<'a, T: Copy> Drop for PeekIter<'a, T> {
     fn drop(&mut self) {
+        let stream = self.stream.as_deref_mut().unwrap();
         if self.consume > 0 {
-            self.stream.rp = (self.stream.rp + self.consume) % self.stream.mem.capacity();
-            self.stream.size -= self.consume;
+            stream.rp = (stream.rp + self.consume) % stream.mem.capacity();
+            stream.size -= self.consume;
         }
     }
 }
@@ -158,8 +161,17 @@ impl<T: Copy> StreamReader<T> {
         Ok(off)
     }
     
-    pub fn peek(&mut self) -> PeekIter<T> {
-        PeekIter::new(self.reader.deref())
+    pub fn peek(&mut self) -> std::io::Result<PeekIter<T>> {
+        let mut it = PeekIter::new(self.reader.deref());
+        if it.stream.as_ref().unwrap().block_read {
+            while it.stream.as_ref().unwrap().size == 0 {
+                it.stream = Some(self.condvar.wait(it.stream.take().unwrap()).unwrap());
+            }
+        } else {
+            return Err(std::io::Error::new(ErrorKind::WouldBlock, "buffer is empty"));
+        }
+        
+        Ok(it)
     }
     
 }
