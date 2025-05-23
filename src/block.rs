@@ -211,17 +211,17 @@ pub struct CpalSink {
 }
 
 impl CpalSink {
-    pub fn new(sample_rate: usize, channels: u16) -> Result<Self, Box<dyn Error>> {
+    pub fn new(sample_rate: u32, channels: u16) -> Result<Self, Box<dyn Error>> {
         let host = cpal::default_host();
         let device = host.default_output_device().ok_or("unable to open default output audio device")?;
 
         let config = StreamConfig {
             channels,
-            sample_rate: cpal::SampleRate(sample_rate as u32),
+            sample_rate: cpal::SampleRate(sample_rate),
             buffer_size: BufferSize::Default,
         };
 
-        let (reader, writer) = new_stream::<f32>(sample_rate, false, true, false)?;
+        let (reader, writer) = new_stream::<f32>(sample_rate as usize, false, true, false)?;
 
 
         let stream = device.build_output_stream(&config, move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {

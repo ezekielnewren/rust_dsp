@@ -76,16 +76,9 @@ fn canonical_path(path: String) -> PathBuf {
 
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let dir_dump = dirs::home_dir().unwrap().join("tmp");
-
     let argv: Vec<String> = std::env::args().collect();
-
     let file_dst = canonical_path(argv[1].clone());
     
-    // let mut source = WavSource::new(file_src, 0)?;
-    // let sample_rate = source.spec().sample_rate as usize;
-    // let mut sink = Speakers::new(sample_rate, 2)?;
-
     let device = HackRf::open()?;
     
     let cutoff_hz = 200e3f32;
@@ -95,25 +88,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tune_hardware = (tune_freq + tune_off) as u64;
 
     let bandwidth: u32 = 2_000_000;
-    let sample_rate: u32 = bandwidth * 2;
-
-    device.set_sample_rate(sample_rate)?;
+    let sample_rate_hardware: u32 = bandwidth * 2;
+    let sample_rate_fm = (2.0 * cutoff_hz) as u32;
+    let sample_rate_audio: u32 = 44100;
+    
+    device.set_sample_rate(sample_rate_hardware)?;
     device.set_baseband_filter_bandwidth(bandwidth)?;
     device.set_freq(tune_hardware)?;
     device.set_amp_enable(false)?;
 
-    let mut bank = BufferBank::default();
+    let mut bank_complex = BufferBank::default();
+    let mut bank_real = BufferBank::<f32>::default();
 
-    let mut source = HackRFSource::new(device, sample_rate as usize)?;
-    let mut mix = MixerFilter::new(sample_rate, tune_off);
-    let mut resample = RationalResampler::new(sample_rate, (2.0 * cutoff_hz) as u32, 101);
-    let mut sink = WavSink::new_file(sample_rate, 2, file_dst)?;
-
+    let mut source = HackRFSource::new(device, sample_rate_hardware as usize)?;
+    let mut mix = MixerFilter::new(sample_rate_hardware, tune_off);
+    let mut resample0 = RationalResampler::new(sample_rate_hardware, sample_rate_fm, 101);
+    let mut demod = FMDemod::new(sample_rate_fm, 75e3);
+    let mut resample1 = RationalResampler::new(sample_rate_fm, sample_rate_audio, 101);
+    let mut sink = Speakers::new(sample_rate_audio, 1)?;
+    
     let mut total: u64 = 0;
 
     let start = Instant::now();
     loop {
-        let (src, dst) = bank.swap();
+        let (src, dst) = bank_complex.swap();
         if let Ok(()) = source.read(src) {
             total += src.len() as u64;
             if src.len() == 0 || start.elapsed().as_secs_f32() > 3.0 {
@@ -121,9 +119,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
 
             mix.filter(src, dst)?;
-            let (src, dst) = bank.swap();
-            resample.filter(src, dst)?;
+            let (src, dst) = bank_complex.swap();
+            resample0.filter(src, dst)?;
+
+            let (src, _) = bank_complex.swap();
+            let (_, dst) = bank_real.swap();
+            demod.filter(src, dst)?;
             
+            let (src, dst) = bank_real.swap();
+            resample1.filter(src, dst)?;
             sink.write(dst.as_slice())?;
         }
     }
