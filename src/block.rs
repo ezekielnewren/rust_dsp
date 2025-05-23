@@ -13,7 +13,7 @@ use num_complex::{Complex, Complex32};
 use num_traits::Zero;
 use crate::streambuf::{new_stream, StreamReader, StreamWriter};
 use crate::traits::*;
-use crate::util::resize_unchecked;
+use crate::util::{lowpass_complex, lowpass_taps, resize_unchecked};
 
 
 pub struct WavSource<D: Read> {
@@ -406,7 +406,7 @@ impl Filter<Complex32, Complex32> for MixerFilter {
             output.push(sample * lo);
             self.phase = (self.phase + self.omega).rem_euclid(2.0 * PI);
         }
-        
+
         Ok(())
     }
 }
@@ -440,7 +440,7 @@ impl<T: Arithmetic> FIRFilter<T> {
             index: 0,
         }
     }
-    
+
     pub fn taps(&self) -> &[T] {
         self.taps.as_slice()
     }
@@ -464,6 +464,62 @@ impl<T: Arithmetic> Filter<T, T> for FIRFilter<T> {
             self.index = (self.index + 1) % self.history.len();
         }
 
+        Ok(())
+    }
+}
+
+
+pub struct RationalResampler<T: FloatLike> {
+    up: usize,
+    down: usize,
+    filter: FIRFilter<T>,
+    phase: usize,
+}
+
+
+impl<T: FloatLike + From<f32>> RationalResampler<T> {
+    pub fn new(start: u32, end: u32, num_taps: usize) -> Self {
+        let gcd = num::integer::gcd(start, end);
+        let up = (start / gcd) as usize;
+        let down = (end / gcd) as usize;
+
+        let cutoff = 0.5 / up.max(down) as f32;
+        let lowpass = lowpass_taps(cutoff, num_taps);
+        let taps: Vec<T> = lowpass.into_iter().map(|r| T::from(r)).collect();
+
+        Self {
+            up,
+            down,
+            filter: FIRFilter::new(taps),
+            phase: 0,
+        }
+    }
+}
+
+
+impl<T: FloatLike> Filter<T, T> for RationalResampler<T> {
+    fn filter(&mut self, input: &[T], output: &mut Vec<T>) -> Result<(), Box<dyn Error>> {
+        let mut upsampled: Vec<T> = Vec::with_capacity(input.len() * self.up);
+        
+        for sample in input.iter().copied() {
+            upsampled.push(sample);
+            for _ in 1..self.up {
+                upsampled.push(T::zero());
+            }
+        }
+        
+        let mut filtered = Vec::<T>::with_capacity(upsampled.len());
+        self.filter.filter(upsampled.as_slice(), &mut filtered)?;
+        
+        output.clear();
+        let mut i = self.phase;
+        while i < filtered.len() {
+            output.push(filtered[i]);
+            i += self.down;
+        }
+        
+        self.phase = i - filtered.len();
+        
         Ok(())
     }
 }

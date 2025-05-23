@@ -87,9 +87,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let mut sink = Speakers::new(sample_rate, 2)?;
 
     let device = HackRf::open()?;
-
+    
+    let cutoff_hz = 200e3f32;
+    
     let tune_freq = 95.5e6;
-    let tune_off = -200e3f32;
+    let tune_off = -cutoff_hz;
     let tune_hardware = (tune_freq + tune_off) as u64;
 
     let bandwidth: u32 = 2_000_000;
@@ -104,6 +106,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut source = HackRFSource::new(device, sample_rate as usize)?;
     let mut mix = MixerFilter::new(sample_rate, tune_off);
+    let mut resample = RationalResampler::new(sample_rate, (2.0 * cutoff_hz) as u32, 101);
     let mut sink = WavSink::new_file(sample_rate, 2, file_dst)?;
 
     let mut total: u64 = 0;
@@ -118,6 +121,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
 
             mix.filter(src, dst)?;
+            let (src, dst) = bank.swap();
+            resample.filter(src, dst)?;
+            // lowpass.filter(src, dst)?;
             sink.write(dst.as_slice())?;
         }
     }

@@ -1,6 +1,7 @@
-use std::f32::consts::PI;
 use num_complex::Complex32;
+use num_traits::One;
 use crate::block::FIRFilter;
+use crate::traits::{FloatLike, Trig};
 
 #[derive(Default)]
 pub struct BufferBank<T> {
@@ -19,37 +20,6 @@ impl<T> BufferBank<T> {
         };
         self.direction = !self.direction;
         result
-    }
-}
-
-
-pub fn sinc<T: SincArg>(x: T) -> T {
-    x.sinc()
-}
-
-pub trait SincArg: Copy {
-    fn sinc(self) -> Self;
-}
-
-impl SincArg for f32 {
-    fn sinc(self) -> Self {
-        if self == 0f32 {
-            1f32
-        } else {
-            let t = self * PI;
-            t.sin() / t
-        }
-    }
-}
-
-impl SincArg for Complex32 {
-    fn sinc(self) -> Self {
-        if self.re == 0f32 && self.im == 0f32 {
-            Complex32::new(1f32, 0f32)
-        } else {
-            let t = self * PI;
-            t.sin() / t
-        }
     }
 }
 
@@ -73,7 +43,7 @@ pub fn lowpass_taps(cutoff: f32, num_taps: usize) -> Vec<f32> {
         let centered = n - m / 2;
         let sinc_val = (2.0 * cutoff * centered as f32).sinc();
 
-        let window = 0.54 - 0.46 * ((2.0 * PI * n as f32) / m as f32).cos();
+        let window = 0.54 - 0.46 * ((2.0 * std::f32::consts::PI * n as f32) / m as f32).cos();
         taps.push(sinc_val * window);
     }
     
