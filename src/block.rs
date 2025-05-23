@@ -10,7 +10,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use libhackrf::HackRf;
 use num_complex::{Complex, Complex32};
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use crate::streambuf::{new_stream, StreamReader, StreamWriter};
 use crate::traits::*;
 use crate::util::{lowpass_complex, lowpass_taps, resize_unchecked};
@@ -500,25 +500,62 @@ impl<T: FloatLike + From<f32>> RationalResampler<T> {
 impl<T: FloatLike> Filter<T, T> for RationalResampler<T> {
     fn filter(&mut self, input: &[T], output: &mut Vec<T>) -> Result<(), Box<dyn Error>> {
         let mut upsampled: Vec<T> = Vec::with_capacity(input.len() * self.up);
-        
+
         for sample in input.iter().copied() {
             upsampled.push(sample);
             for _ in 1..self.up {
                 upsampled.push(T::zero());
             }
         }
-        
+
         let mut filtered = Vec::<T>::with_capacity(upsampled.len());
         self.filter.filter(upsampled.as_slice(), &mut filtered)?;
-        
+
         output.clear();
         let mut i = self.phase;
         while i < filtered.len() {
             output.push(filtered[i]);
             i += self.down;
         }
-        
+
         self.phase = i - filtered.len();
+
+        Ok(())
+    }
+}
+
+
+pub struct FMDemod {
+    sample_rate: u32,
+    deviation: f32,
+    prev: Complex32,
+}
+
+
+impl FMDemod {
+    pub fn new(sample_rate: u32, deviation: f32) -> Self {
+        Self {
+            sample_rate,
+            deviation,
+            prev: Complex32::one(),
+        }
+    }
+}
+
+
+impl Filter<Complex32, f32> for FMDemod {
+    fn filter(&mut self, input: &[Complex32], output: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
+        output.clear();
+        
+        if input.len() < 2 {
+            return Ok(());
+        }
+        
+        for sample in input.iter().copied() {
+            let phase = (self.prev.conj() * sample).arg();
+            output.push(phase * self.sample_rate as f32 / (2.0 * PI * self.deviation));
+            self.prev = sample;
+        }
         
         Ok(())
     }
