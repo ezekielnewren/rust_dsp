@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     let device = HackRf::open()?;
     
-    let cutoff_hz = 200e3f32;
+    let cutoff_hz = 75e3f32;
     let tune_off = -2.0 * cutoff_hz;
     let tune_hardware = (tune_freq + tune_off) as u64;
 
@@ -95,8 +95,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     device.set_freq(tune_hardware)?;
     device.set_amp_enable(false)?;
     
-    // device.set_lna_gain(0)?;
-    // device.set_rxvga_gain(0)?;
+    device.set_lna_gain(40)?;
+    device.set_rxvga_gain(62)?;
 
     let mut bank_complex = BufferBank::default();
     let mut bank_real = BufferBank::<f32>::default();
