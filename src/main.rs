@@ -77,35 +77,41 @@ fn canonical_path(path: String) -> PathBuf {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = std::env::args().nth(1).ok_or("missing tune frequency")?;
+    
+    // radio parameters
+    let bandwidth: u32 = 2_000_000;
+    let cutoff_hz = 75e3f32;
+    let sample_rate_audio: u32 = 44100;
+    let num_taps = 1001;
+    let lna_gain = 40;
+    let rxvga_gain = 10;
     let tune_freq: f32 = args.as_str().parse()?;
     
-    let device = HackRf::open()?;
     
-    let cutoff_hz = 75e3f32;
+    let device = HackRf::open()?;
     let tune_off = -2.0 * cutoff_hz;
     let tune_hardware = (tune_freq + tune_off) as u64;
 
-    let bandwidth: u32 = 2_000_000;
     let sample_rate_hardware: u32 = bandwidth * 2;
     let sample_rate_fm = (2.0 * cutoff_hz) as u32;
-    let sample_rate_audio: u32 = 44100;
     
     device.set_sample_rate(sample_rate_hardware)?;
     device.set_baseband_filter_bandwidth(bandwidth)?;
     device.set_freq(tune_hardware)?;
     device.set_amp_enable(false)?;
     
-    device.set_lna_gain(40)?;
-    device.set_rxvga_gain(62)?;
-
+    device.set_lna_gain(lna_gain)?;
+    device.set_rxvga_gain(rxvga_gain)?;
+    
+    
     let mut bank_complex = BufferBank::default();
     let mut bank_real = BufferBank::<f32>::default();
 
     let mut source = HackRFSource::new(device, sample_rate_hardware as usize)?;
     let mut mix = MixerFilter::new(sample_rate_hardware, tune_off);
-    let mut resample0 = RationalResampler::new(sample_rate_hardware, sample_rate_fm, 101);
+    let mut resample0 = RationalResampler::new(sample_rate_hardware, sample_rate_fm, num_taps);
     let mut demod = FMDemod::new(sample_rate_fm, 75e3);
-    let mut resample1 = RationalResampler::new(sample_rate_fm, sample_rate_audio, 101);
+    let mut resample1 = RationalResampler::new(sample_rate_fm, sample_rate_audio, num_taps);
     let mut deemph = DeEmphasisFilter::new(sample_rate_audio, 75e-6);
     let mut sink = Speakers::new(sample_rate_audio, 1)?;
     
@@ -117,40 +123,40 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let (src, dst) = bank_complex.swap();
         if let Ok(()) = source.read(src) {
-            println!("{}: new frame", frame);
+            // println!("{}: new frame", frame);
             total += src.len() as u64;
             if src.len() == 0 || start.elapsed().as_secs_f32() > u64::MAX as f32 {
                 break;
             }
 
             mix.filter(src, dst)?;
-            println!("{}: mix", frame);
+            // println!("{}: mix", frame);
             
             let (src, dst) = bank_complex.swap();
             resample0.filter(src, dst)?;
-            println!("{}: extract fm band", frame);
+            // println!("{}: extract fm band", frame);
 
             let (src, _) = bank_complex.swap();
             let (_, dst) = bank_real.swap();
             demod.filter(src, dst)?;
-            println!("{}: fm demod", frame);
+            // println!("{}: fm demod", frame);
             
             let (src, dst) = bank_real.swap();
             resample1.filter(src, dst)?;
-            println!("{}: audio downsample, {}", frame, dst.len());
+            // println!("{}: audio downsample, {}", frame, dst.len());
 
             let (src, dst) = bank_real.swap();
             deemph.filter(src, dst)?;
-            println!("{}: de-emphasis, {}", frame, dst.len());
+            // println!("{}: de-emphasis, {}", frame, dst.len());
             
             sink.write(dst.as_slice())?;
-            println!("{}: done", frame);
+            // println!("{}: done", frame);
             
             frame += 1;
         }
     }
 
-    println!("samples captured: {}", total);
+    // println!("samples captured: {}", total);
 
     Ok(())
 }
