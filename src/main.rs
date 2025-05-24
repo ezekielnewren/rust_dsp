@@ -123,35 +123,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let (src, dst) = bank_complex.swap();
         if let Ok(()) = source.read(src) {
-            // println!("{}: new frame", frame);
             total += src.len() as u64;
             if src.len() == 0 || start.elapsed().as_secs_f32() > u64::MAX as f32 {
                 break;
             }
 
             mix.filter(src, dst)?;
-            // println!("{}: mix", frame);
-            
             let (src, dst) = bank_complex.swap();
             resample0.filter(src, dst)?;
-            // println!("{}: extract fm band", frame);
 
+            // WBFM Mono start
             let (src, _) = bank_complex.swap();
             let (_, dst) = bank_real.swap();
             demod.filter(src, dst)?;
-            // println!("{}: fm demod", frame);
             
             let (src, dst) = bank_real.swap();
             resample1.filter(src, dst)?;
-            // println!("{}: audio downsample, {}", frame, dst.len());
 
             let (src, dst) = bank_real.swap();
             deemph.filter(src, dst)?;
-            // println!("{}: de-emphasis, {}", frame, dst.len());
+            // WBFM Mono end
             
             sink.write(dst.as_slice())?;
-            // println!("{}: done", frame);
-            
             frame += 1;
         }
     }
