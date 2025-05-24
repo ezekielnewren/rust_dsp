@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::f32::consts::PI;
 use std::fs::File;
@@ -472,7 +473,8 @@ impl<T: Arithmetic> Filter<T, T> for FIRFilter<T> {
 pub struct RationalResampler<T: FloatLike> {
     up: usize,
     down: usize,
-    filter: FIRFilter<T>,
+    phases: Vec<Vec<T>>,
+    state: VecDeque<T>,
     phase: usize,
 }
 
@@ -480,45 +482,59 @@ pub struct RationalResampler<T: FloatLike> {
 impl<T: FloatLike + From<f32>> RationalResampler<T> {
     pub fn new(start: u32, end: u32, num_taps: usize) -> Self {
         let gcd = num::integer::gcd(start, end);
-        let up = (start / gcd) as usize;
-        let down = (end / gcd) as usize;
+        let down = (start / gcd) as usize;
+        let up = (end / gcd) as usize;
 
         let cutoff = 0.5 / up.max(down) as f32;
         let lowpass = lowpass_taps(cutoff, num_taps);
         let taps: Vec<T> = lowpass.into_iter().map(|r| T::from(r)).collect();
-
+        
+        let mut phases = vec![vec![]; up];
+        for (i, tap) in taps.into_iter().enumerate() {
+            phases[i % up].push(tap);
+        }
+        
+        let max_len = phases.iter().map(Vec::len).max().unwrap_or(0);
+        for phase in phases.iter_mut() {
+            while phase.len() < max_len {
+                phase.push(T::zero());
+            }
+        }
+        
+        let mut state = VecDeque::new();
+        state.resize(max_len, T::zero());
+        
         Self {
             up,
             down,
-            filter: FIRFilter::new(taps),
+            phases,
+            state,
             phase: 0,
         }
     }
 }
 
 
-impl<T: FloatLike> Filter<T, T> for RationalResampler<T> {
+impl<T: FloatLike + From<f32>> Filter<T, T> for RationalResampler<T> {
     fn filter(&mut self, input: &[T], output: &mut Vec<T>) -> Result<(), Box<dyn Error>> {
-        let mut upsampled: Vec<T> = Vec::with_capacity(input.len() * self.up);
-
-        for sample in input.iter().copied() {
-            upsampled.push(sample);
-            for _ in 1..self.up {
-                upsampled.push(T::zero());
-            }
-        }
-
-        let mut filtered = Vec::<T>::with_capacity(upsampled.len());
-        self.filter.filter(upsampled.as_slice(), &mut filtered)?;
-
         output.clear();
-        let mut i = self.phase;
-        while i < filtered.len() {
-            output.push(filtered[i]);
-            i += self.down;
+        
+        for &sample in input {
+            self.state.pop_back();
+            self.state.push_front(sample);
+            
+            while self.phase < self.up {
+                let mut acc = T::zero();
+                let coeffs = self.phases[self.phase].iter();
+                for (&tap, &samp) in coeffs.zip(self.state.iter()) {
+                    acc += tap * samp;
+                }
+                output.push(acc);
+                self.phase += self.down;
+            }
+            
+            self.phase -= self.up;
         }
-
-        self.phase = i - filtered.len();
 
         Ok(())
     }
