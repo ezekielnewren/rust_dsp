@@ -76,11 +76,12 @@ fn canonical_path(path: String) -> PathBuf {
 
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = std::env::args().nth(1).ok_or("missing tune frequency")?;
+    let tune_freq: f32 = args.as_str().parse()?;
+    
     let device = HackRf::open()?;
     
     let cutoff_hz = 200e3f32;
-    
-    let tune_freq = 95.5e6;
     let tune_off = -2.0 * cutoff_hz;
     let tune_hardware = (tune_freq + tune_off) as u64;
 
