@@ -108,27 +108,39 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sink = Speakers::new(sample_rate_audio, 1)?;
     
     let mut total: u64 = 0;
-
+    
+    let mut frame = 0;
+    
     let start = Instant::now();
     loop {
         let (src, dst) = bank_complex.swap();
         if let Ok(()) = source.read(src) {
+            println!("{}: new frame", frame);
             total += src.len() as u64;
-            if src.len() == 0 || start.elapsed().as_secs_f32() > 3.0 {
+            if src.len() == 0 || start.elapsed().as_secs_f32() > 10.0 {
                 break;
             }
 
             mix.filter(src, dst)?;
+            println!("{}: mix", frame);
+            
             let (src, dst) = bank_complex.swap();
             resample0.filter(src, dst)?;
+            println!("{}: extract fm band", frame);
 
             let (src, _) = bank_complex.swap();
             let (_, dst) = bank_real.swap();
             demod.filter(src, dst)?;
+            println!("{}: fm demod", frame);
             
             let (src, dst) = bank_real.swap();
             resample1.filter(src, dst)?;
+            println!("{}: audio downsample, {}", frame, dst.len());
+            
             sink.write(dst.as_slice())?;
+            println!("{}: done", frame);
+            
+            frame += 1;
         }
     }
 
