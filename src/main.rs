@@ -76,15 +76,12 @@ fn canonical_path(path: String) -> PathBuf {
 
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let argv: Vec<String> = std::env::args().collect();
-    let file_dst = canonical_path(argv[1].clone());
-    
     let device = HackRf::open()?;
     
     let cutoff_hz = 200e3f32;
     
     let tune_freq = 95.5e6;
-    let tune_off = -cutoff_hz;
+    let tune_off = -2.0 * cutoff_hz;
     let tune_hardware = (tune_freq + tune_off) as u64;
 
     let bandwidth: u32 = 2_000_000;
@@ -96,6 +93,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     device.set_baseband_filter_bandwidth(bandwidth)?;
     device.set_freq(tune_hardware)?;
     device.set_amp_enable(false)?;
+    
+    // device.set_lna_gain(0)?;
+    // device.set_rxvga_gain(0)?;
 
     let mut bank_complex = BufferBank::default();
     let mut bank_real = BufferBank::<f32>::default();
@@ -105,6 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut resample0 = RationalResampler::new(sample_rate_hardware, sample_rate_fm, 101);
     let mut demod = FMDemod::new(sample_rate_fm, 75e3);
     let mut resample1 = RationalResampler::new(sample_rate_fm, sample_rate_audio, 101);
+    let mut deemph = DeEmphasisFilter::new(sample_rate_audio, 75e-6);
     let mut sink = Speakers::new(sample_rate_audio, 1)?;
     
     let mut total: u64 = 0;
@@ -117,7 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Ok(()) = source.read(src) {
             println!("{}: new frame", frame);
             total += src.len() as u64;
-            if src.len() == 0 || start.elapsed().as_secs_f32() > 10.0 {
+            if src.len() == 0 || start.elapsed().as_secs_f32() > u64::MAX as f32 {
                 break;
             }
 
@@ -136,6 +137,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             let (src, dst) = bank_real.swap();
             resample1.filter(src, dst)?;
             println!("{}: audio downsample, {}", frame, dst.len());
+
+            let (src, dst) = bank_real.swap();
+            deemph.filter(src, dst)?;
+            println!("{}: de-emphasis, {}", frame, dst.len());
             
             sink.write(dst.as_slice())?;
             println!("{}: done", frame);

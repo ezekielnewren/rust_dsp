@@ -329,6 +329,8 @@ impl HackRFSource {
 
 impl Source<Complex32> for HackRFSource {
     fn read(&mut self, dst: &mut Vec<Complex32>) -> Result<(), Box<dyn Error>> {
+        const SCALE: f32 = 128.0;
+        
         dst.clear();
         let mut off = 0;
         let mut it = self.reader.peek()?;
@@ -340,8 +342,8 @@ impl Source<Complex32> for HackRFSource {
             }
             for sample in &chunk[..rem] {
                 dst.push(Complex32 {
-                    re: sample.re as f32 / i8::MAX as f32,
-                    im: sample.im as f32 / i8::MAX as f32,
+                    re: sample.re as f32 / SCALE,
+                    im: sample.im as f32 / SCALE,
                 });
             }
             off += rem;
@@ -571,6 +573,40 @@ impl Filter<Complex32, f32> for FMDemod {
             let phase = (self.prev.conj() * sample).arg();
             output.push(phase * self.sample_rate as f32 / (2.0 * PI * self.deviation));
             self.prev = sample;
+        }
+        
+        Ok(())
+    }
+}
+
+
+pub struct DeEmphasisFilter {
+    alpha: f32,
+    y_prev: f32,
+}
+
+
+impl DeEmphasisFilter {
+    pub fn new(sample_rate: u32, tau: f32) -> Self {
+        let dt = 1.0 / sample_rate as f32;
+        let alpha = dt / (tau + dt);
+        
+        Self {
+            alpha,
+            y_prev: 0.0,
+        }
+    }
+}
+
+
+impl Filter<f32, f32> for DeEmphasisFilter {
+    fn filter(&mut self, input: &[f32], output: &mut Vec<f32>) -> Result<(), Box<dyn Error>> {
+        output.clear();
+        
+        for &sample in input {
+            let y = self.alpha * sample + (1.0 - self.alpha) * self.y_prev;
+            output.push(y);
+            self.y_prev = y;
         }
         
         Ok(())
